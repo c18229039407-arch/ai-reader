@@ -138,7 +138,7 @@
 | D5 | 追问/对话 | 对解释不满意可继续追问，形成局部对话 | P1 |
 | D6 | 解释深度切换 | 「一句话 / 展开 / 举例 / 更深」多档深度 | P1 |
 | D7 | 用户画像管理 | 用户可设置并随时编辑职业、兴趣、偏好的类比风格；也可选择「不个性化」 | P0（与 D4 配套） |
-| D8 | 解释留存 | 解释结果可存为该书的笔记，便于回看 | P1 |
+| D8 | 解释留存与原文锚点 | 解释结果自动留存；被解释过的原文处常驻小标记（✦ 锚点），点按小浮窗直接回看，**不重新请求模型**；锚点随书本地持久化，下次打开书仍在原位 | P1（V1 核心体验）|
 | D9 | 术语一致性 | 同一本书内对同一术语的解释保持一致（缓存/记忆） | P2 |
 | D10 | 生词/概念本 | 自动沉淀查过的概念，形成个人概念本 | P2 |
 
@@ -257,7 +257,7 @@
 Book(id, title, author, cover_path, file_path, format, source, license, added_at)
 ReadingState(book_id, locator, percent, updated_at)
 Annotation(id, book_id, type[highlight|note|bookmark], locator, color, text, created_at)
-Explanation(id, book_id, term, context_excerpt, result_text, created_at)   // D8/D10
+Explanation(id, book_id, locator, term, context_excerpt, result_text, created_at)   // D8/D10；locator 用于正文锚点定位
 UserProfile(occupation, interests[], analogy_domains[], default_depth, personalize_on)
 Setting(llm_provider, api_key_ref, privacy_flags, sync_config)
 ```

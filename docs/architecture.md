@@ -89,7 +89,7 @@ EPUB ──► 章节/段落切分（保留段落ID） ──► 任务队列（
 Book(id, title, author, cover_path, file_path, format, source, license, lang, added_at)
 ReadingState(book_id, locator, percent, updated_at, device_id)
 Annotation(id, book_id, type[highlight|note|bookmark], locator, color, text, created_at, device_id)
-Explanation(id, book_id, term, context_excerpt, result_text, created_at)
+Explanation(id, book_id, locator, term, context_excerpt, result_text, created_at)  -- locator: 正文锚点定位(D8)
 Translation(book_id, para_id, source_text_hash, translated_text, provider, created_at)
 UserProfile(occupation, interests[], analogy_domains[], free_description, default_depth, personalize_on)
 Setting(llm_config, privacy_flags, sync_config)        // API Key 存系统 Keychain/Keystore，不落库
