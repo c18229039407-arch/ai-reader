@@ -25,11 +25,17 @@ class ExplainService {
     required String chapterTitle,
     required String contextExcerpt,
     required UserProfile profile,
+    String? priorExplanation, // D9：同书同术语的既有解释，保持口径一致
   }) {
     final personal = profile.promptFragment();
+    final consistency = (priorExplanation == null || priorExplanation.isEmpty)
+        ? ''
+        : '\n此前你在本书中对相同/相近术语给过如下解释，请保持术语口径与结论一致（可以换例子，但不要自相矛盾）：\n'
+            '---\n$priorExplanation\n---\n';
     return '你是一位擅长把难懂概念讲通俗的阅读助手。'
         '用户正在读《$bookTitle》的「$chapterTitle」一章，选中了其中一段话。'
         '以下是该段的上下文，供你理解语境（不必逐句解释上下文）：\n---\n$contextExcerpt\n---\n'
+        '$consistency'
         '请针对用户选中的文字：'
         '1) 用通俗中文解释其中的核心概念，禁止用术语解释术语；'
         '2) 给一个具体的生活化例子；$personal '
@@ -40,13 +46,14 @@ class ExplainService {
   static String translateSystem() => '你是翻译助手。把用户给出的段落翻译成流畅的简体中文，'
       '目标是让读者看懂，语义准确优先于文采。只输出译文。';
 
-  /// 开启一次解释会话（支持追问/换例/深度，D5/D6）。
+  /// 开启一次解释会话（支持追问/换例/深度，D5/D6；priorExplanation 为 D9）。
   ExplainSession explainSession({
     required String bookTitle,
     required ChapterText chapter,
     required int paragraphIndex,
     required String selectedText,
     required UserProfile profile,
+    String? priorExplanation,
   }) {
     return ExplainSession(
       client: client,
@@ -56,6 +63,7 @@ class ExplainService {
         chapterTitle: chapter.title,
         contextExcerpt: buildContext(chapter, paragraphIndex, selectedText),
         profile: profile,
+        priorExplanation: priorExplanation,
       ),
       firstUser: selectedText,
     );

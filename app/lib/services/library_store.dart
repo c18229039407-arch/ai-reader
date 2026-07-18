@@ -60,7 +60,11 @@ class LibraryStore {
     if (existing != null) return existing;
 
     final ext = p.extension(originalName).toLowerCase().replaceFirst('.', '');
-    final format = ext == 'txt' ? 'txt' : 'epub';
+    final format = switch (ext) {
+      'txt' => 'txt',
+      'pdf' => 'pdf',
+      _ => 'epub',
+    };
     final rel = p.join('books', '$id.$format');
     await File(p.join(rootDir.path, rel)).writeAsBytes(bytes);
 
@@ -97,6 +101,67 @@ class LibraryStore {
     );
     await _saveBooks([...books, book]);
     return book;
+  }
+
+  /// 更新书目元数据（B3 标签编辑等）。
+  Future<void> updateBook(Book updated) async {
+    final books = await listBooks();
+    await _saveBooks(
+        books.map((b) => b.id == updated.id ? updated : b).toList());
+  }
+
+  /// 书籍文件的绝对路径（PDF 查看器需要）。
+  String absolutePath(Book book) => p.join(rootDir.path, book.filePath);
+
+  /// 导出书架元数据 + 全部阅读状态（B5，不含书籍文件本体）。
+  Future<String> exportBundle() async {
+    final books = await listBooks();
+    final states = <String, dynamic>{};
+    for (final b in books) {
+      states[b.id] = (await loadState(b.id)).toJson();
+    }
+    return const JsonEncoder.withIndent('  ').convert({
+      'format': 'ai-reader-bundle-v1',
+      'exportedAt': DateTime.now().toIso8601String(),
+      'books': books.map((b) => b.toJson()).toList(),
+      'states': states,
+    });
+  }
+
+  /// 导入元数据包（B5）：书目按 id 合并（已存在的保留本地文件路径），
+  /// 状态与本地状态做多设备合并。书籍文件本体不在包内，缺文件的书打开时会提示。
+  Future<int> importBundle(String json) async {
+    final data = jsonDecode(json) as Map<String, dynamic>;
+    if (data['format'] != 'ai-reader-bundle-v1') {
+      throw Exception('不是有效的 AI Reader 导出包');
+    }
+    final incoming = ((data['books'] as List?) ?? [])
+        .map((e) => Book.fromJson(e as Map<String, dynamic>))
+        .toList();
+    final local = await listBooks();
+    final byId = {for (final b in local) b.id: b};
+    var added = 0;
+    for (final b in incoming) {
+      if (!byId.containsKey(b.id)) {
+        byId[b.id] = b;
+        added++;
+      } else {
+        // 已存在：合并标签
+        final merged = {...byId[b.id]!.tags, ...b.tags}.toList();
+        byId[b.id] = byId[b.id]!.copyWith(tags: merged);
+      }
+    }
+    await _saveBooks(byId.values.toList());
+
+    final states = (data['states'] as Map?) ?? {};
+    for (final entry in states.entries) {
+      final incomingState =
+          BookState.fromJson(entry.value as Map<String, dynamic>);
+      final localState = await loadState(entry.key as String);
+      await saveState(
+          entry.key as String, mergeStates([localState, incomingState]));
+    }
+    return added;
   }
 
   Future<void> removeBook(String id) async {
@@ -173,6 +238,8 @@ class LibraryStore {
     var reading = states.first.reading;
     final highlights = <String, Highlight>{};
     final explanations = <String, Explanation>{};
+    final notes = <String, NoteAnn>{};
+    final bookmarks = <String, Bookmark>{};
     for (final s in states) {
       if (s.reading.updatedAt.isAfter(reading.updatedAt)) {
         reading = s.reading;
@@ -183,12 +250,22 @@ class LibraryStore {
       for (final e in s.explanations) {
         explanations[e.id] = e;
       }
+      for (final n in s.notes) {
+        notes['${n.locator}|${n.createdAt.toIso8601String()}'] = n;
+      }
+      for (final b in s.bookmarks) {
+        bookmarks['${b.chapterIndex}|${b.createdAt.toIso8601String()}'] = b;
+      }
     }
-    final hs = highlights.values.toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    final es = explanations.values.toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-    return BookState(reading: reading, highlights: hs, explanations: es);
+    List<T> sorted<T>(Iterable<T> it, DateTime Function(T) key) =>
+        it.toList()..sort((a, b) => key(a).compareTo(key(b)));
+    return BookState(
+      reading: reading,
+      highlights: sorted(highlights.values, (h) => h.createdAt),
+      explanations: sorted(explanations.values, (e) => e.createdAt),
+      notes: sorted(notes.values, (n) => n.createdAt),
+      bookmarks: sorted(bookmarks.values, (b) => b.createdAt),
+    );
   }
 
   Future<void> saveState(String bookId, BookState state) async {

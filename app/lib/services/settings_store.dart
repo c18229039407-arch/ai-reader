@@ -53,6 +53,16 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- 自定义数据源（A5，实验性）----------
+  /// 每行一个 Gutendex 兼容源的 baseUrl；添加何种源属用户自身行为。
+  List<String> get customSourceUrls =>
+      _prefs.getStringList('custom_sources') ?? [];
+  set customSourceUrls(List<String> v) {
+    _prefs.setStringList(
+        'custom_sources', v.where((s) => s.trim().isNotEmpty).toList());
+    notifyListeners();
+  }
+
   // ---------- 画像（D7）----------
   UserProfile get profile => UserProfile(
         occupation: _prefs.getString('profile_occupation') ?? '',

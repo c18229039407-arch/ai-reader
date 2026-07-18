@@ -36,21 +36,33 @@ class BookSearchResult {
 }
 
 /// Project Gutenberg（经 Gutendex API）——公版书，合法免费（A2/A3）。
+/// 也可指向任何 Gutendex 兼容服务，作为用户自定义源（A5）。
 class GutendexSource implements BookSource {
-  GutendexSource({http.Client? client, this.baseUrl = 'https://gutendex.com'})
-      : _http = client ?? http.Client();
+  GutendexSource({
+    http.Client? client,
+    this.baseUrl = 'https://gutendex.com',
+    String? id,
+    String? displayName,
+    String? licenseNote,
+  })  : _http = client ?? http.Client(),
+        _id = id ?? 'gutendex',
+        _displayName = displayName ?? 'Project Gutenberg（公版书）',
+        _licenseNote = licenseNote ?? '美国公有领域作品，可自由下载与阅读';
 
   final http.Client _http;
   final String baseUrl;
+  final String _id;
+  final String _displayName;
+  final String _licenseNote;
 
   @override
-  String get id => 'gutendex';
+  String get id => _id;
 
   @override
-  String get displayName => 'Project Gutenberg（公版书）';
+  String get displayName => _displayName;
 
   @override
-  String get licenseNote => '美国公有领域作品，可自由下载与阅读';
+  String get licenseNote => _licenseNote;
 
   @override
   Future<List<BookSearchResult>> search(String query, {String? lang}) async {

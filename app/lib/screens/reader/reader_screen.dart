@@ -10,8 +10,10 @@ import '../../services/library_store.dart';
 import '../../services/ollama_client.dart';
 import '../../services/settings_store.dart';
 import '../../services/translation_store.dart';
+import 'annotations_screen.dart';
 import 'concepts_screen.dart';
 import 'explain_panel.dart';
+import 'search_in_book_screen.dart';
 
 /// 高亮色板（C5）。
 const highlightColors = [
@@ -199,6 +201,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
       return;
     }
 
+    // D9 术语一致性：查找本书内相同/相近选文的既有解释，注入提示词
+    String? prior;
+    if (!translate) {
+      final norm = selected.replaceAll(RegExp(r'\s+'), '');
+      for (final e in _state.explanations.reversed) {
+        if (e.mode != 'explain') continue;
+        final t = e.term.replaceAll(RegExp(r'\s+'), '');
+        if (t == norm || t.contains(norm) || norm.contains(t)) {
+          prior = e.resultText;
+          break;
+        }
+      }
+    }
+
     final session = translate
         ? svc.translateSession(selected)
         : svc.explainSession(
@@ -207,6 +223,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             paragraphIndex: para ?? 0,
             selectedText: selected,
             profile: widget.settings.profile,
+            priorExplanation: prior,
           );
 
     _showPanel(ExplainPanel(
@@ -252,6 +269,110 @@ class _ReaderScreenState extends State<ReaderScreen> {
           : e.resultText,
       onClose: _closePanel,
     ));
+  }
+
+  // ---------- 笔记与书签（C6） ----------
+
+  Future<void> _addNote() async {
+    final para = _locateParagraph(_selectedText);
+    if (para == null) return;
+    ContextMenuController.removeAny();
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('添加笔记'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          decoration: const InputDecoration(
+              hintText: '写点想法…', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (text == null || text.isEmpty) return;
+    setState(() {
+      _state.notes.add(NoteAnn(
+          locator: Locator(_chapterIndex, para),
+          text: text,
+          createdAt: DateTime.now()));
+    });
+    await widget.store.saveState(widget.book.id, _state);
+  }
+
+  List<NoteAnn> _notesAt(int para) {
+    final loc = Locator(_chapterIndex, para);
+    return _state.notes.where((n) => n.locator == loc).toList();
+  }
+
+  Future<void> _toggleBookmark() async {
+    final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+    // 同章 ±200px 内已有书签 → 视为取消
+    final existing = _state.bookmarks
+        .where((b) =>
+            b.chapterIndex == _chapterIndex &&
+            (b.scrollOffset - offset).abs() < 200)
+        .toList();
+    setState(() {
+      if (existing.isNotEmpty) {
+        _state.bookmarks.removeWhere((b) => existing.contains(b));
+      } else {
+        _state.bookmarks.add(Bookmark(
+            chapterIndex: _chapterIndex,
+            scrollOffset: offset,
+            label: '',
+            createdAt: DateTime.now()));
+      }
+    });
+    await widget.store.saveState(widget.book.id, _state);
+  }
+
+  bool get _bookmarkedHere {
+    final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+    return _state.bookmarks.any((b) =>
+        b.chapterIndex == _chapterIndex &&
+        (b.scrollOffset - offset).abs() < 200);
+  }
+
+  void _showNotes(int para) {
+    final notes = _notesAt(para);
+    if (notes.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text('本段笔记', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            ...notes.map((n) => ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.sticky_note_2_outlined, size: 18),
+                  title: Text(n.text),
+                  subtitle:
+                      Text(n.createdAt.toLocal().toString().substring(0, 16)),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    onPressed: () async {
+                      setState(() => _state.notes.remove(n));
+                      await widget.store.saveState(widget.book.id, _state);
+                      if (mounted) Navigator.of(context).pop();
+                    },
+                  ),
+                )),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------- 批量翻译（G2/G4） ----------
@@ -406,24 +527,68 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ],
             ),
           IconButton(
-            tooltip: '概念本',
-            icon: const Icon(Icons.collections_bookmark_outlined),
+            tooltip: '书内搜索',
+            icon: const Icon(Icons.search),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => ConceptsScreen(
-                bookTitle: content.title,
-                explanations: _state.explanations,
-                onJump: (loc) => _goto(loc.chapter, paragraph: loc.paragraph),
+              builder: (_) => SearchInBookScreen(
+                book: content,
+                onJump: (c, p) => _goto(c, paragraph: p),
               ),
             )),
           ),
+          IconButton(
+            tooltip: _bookmarkedHere ? '取消书签' : '添加书签',
+            icon:
+                Icon(_bookmarkedHere ? Icons.bookmark : Icons.bookmark_outline),
+            onPressed: _toggleBookmark,
+          ),
           PopupMenuButton<String>(
             tooltip: '更多',
-            onSelected: (v) {
-              if (v == 'batch') _startBatchTranslate();
-              if (v == 'pause') _batch?.pause();
-              if (v == 'typo') _showTypography();
+            onSelected: (v) async {
+              switch (v) {
+                case 'batch':
+                  _startBatchTranslate();
+                case 'pause':
+                  _batch?.pause();
+                case 'typo':
+                  _showTypography();
+                case 'concepts':
+                  await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => ConceptsScreen(
+                      bookTitle: content.title,
+                      explanations: _state.explanations,
+                      onJump: (loc) =>
+                          _goto(loc.chapter, paragraph: loc.paragraph),
+                    ),
+                  ));
+                case 'annotations':
+                  await Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => AnnotationsScreen(
+                      bookTitle: content.title,
+                      state: _state,
+                      chapterTitleOf: (i) => content.chapters[i].title,
+                      onJump: (c, {paragraph, offset}) {
+                        _goto(c, paragraph: paragraph);
+                        if (offset != null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (_scroll.hasClients) {
+                              _scroll.jumpTo(offset.clamp(
+                                  0, _scroll.position.maxScrollExtent));
+                            }
+                          });
+                        }
+                      },
+                      onChanged: () =>
+                          widget.store.saveState(widget.book.id, _state),
+                    ),
+                  ));
+                  if (mounted) setState(() {});
+              }
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                  value: 'annotations', child: Text('标注（书签/笔记/高亮）')),
+              const PopupMenuItem(value: 'concepts', child: Text('概念本')),
               const PopupMenuItem(value: 'typo', child: Text('排版设置')),
               PopupMenuItem(
                   value: 'batch',
@@ -552,6 +717,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ContextMenuController.removeAny();
                   _toggleHighlight(0);
                 }),
+            ContextMenuButtonItem(label: '笔记', onPressed: _addNote),
             ...state.contextMenuButtonItems,
           ],
         );
@@ -571,6 +737,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _paragraph(ChapterText ch, int i, SettingsStore s) {
     final hl = _highlightAt(i);
     final hasExplain = _explanationsAt(i).isNotEmpty;
+    final hasNote = _notesAt(i).isNotEmpty;
     final translated = _translation.of(_chapterIndex, i);
 
     final baseStyle = TextStyle(fontSize: s.fontSize, height: s.lineHeight);
@@ -608,26 +775,38 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 borderRadius: BorderRadius.circular(4))
             : null,
         padding: hl != null ? const EdgeInsets.symmetric(horizontal: 4) : null,
-        child: hasExplain
+        child: (hasExplain || hasNote)
             ? Wrap(
                 crossAxisAlignment: WrapCrossAlignment.end,
                 children: [
                   body,
-                  GestureDetector(
-                    onTap: () => _openSaved(i),
-                    child: Container(
-                      margin: const EdgeInsets.only(left: 6, bottom: 2),
-                      width: 18,
-                      height: 18,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Theme.of(context).colorScheme.primary,
+                  if (hasExplain)
+                    GestureDetector(
+                      onTap: () => _openSaved(i),
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 6, bottom: 2),
+                        width: 18,
+                        height: 18,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        child: const Text('✦',
+                            style:
+                                TextStyle(fontSize: 10, color: Colors.white)),
                       ),
-                      child: const Text('✦',
-                          style: TextStyle(fontSize: 10, color: Colors.white)),
                     ),
-                  ),
+                  if (hasNote)
+                    GestureDetector(
+                      onTap: () => _showNotes(i),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 6, bottom: 2),
+                        child: Icon(Icons.sticky_note_2,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.tertiary),
+                      ),
+                    ),
                 ],
               )
             : body,

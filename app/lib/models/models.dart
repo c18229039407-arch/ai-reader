@@ -11,15 +11,19 @@ class Book {
     required this.format,
     required this.addedAt,
     this.lang = '',
-  });
+    List<String>? tags,
+  }) : tags = tags ?? [];
 
   final String id; // 文件内容 sha1 前 16 位
   final String title;
   final String author;
   final String filePath; // 库目录内的相对路径
-  final String format; // epub | txt
+  final String format; // epub | txt | pdf
   final String lang;
   final DateTime addedAt;
+
+  /// 自定义标签（B3）。
+  final List<String> tags;
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -29,6 +33,7 @@ class Book {
         'format': format,
         'lang': lang,
         'addedAt': addedAt.toIso8601String(),
+        'tags': tags,
       };
 
   factory Book.fromJson(Map<String, dynamic> j) => Book(
@@ -40,6 +45,18 @@ class Book {
         lang: j['lang'] as String? ?? '',
         addedAt:
             DateTime.tryParse(j['addedAt'] as String? ?? '') ?? DateTime.now(),
+        tags: ((j['tags'] as List?) ?? []).map((e) => e.toString()).toList(),
+      );
+
+  Book copyWith({String? title, String? author, List<String>? tags}) => Book(
+        id: id,
+        title: title ?? this.title,
+        author: author ?? this.author,
+        filePath: filePath,
+        format: format,
+        lang: lang,
+        addedAt: addedAt,
+        tags: tags ?? this.tags,
       );
 }
 
@@ -130,6 +147,59 @@ class Highlight {
       );
 }
 
+/// 段落笔记（C6）。
+class NoteAnn {
+  NoteAnn({required this.locator, required this.text, required this.createdAt});
+
+  final Locator locator;
+  String text;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+        'locator': locator.toString(),
+        'text': text,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory NoteAnn.fromJson(Map<String, dynamic> j) => NoteAnn(
+        locator:
+            Locator.parse(j['locator'] as String? ?? '') ?? const Locator(0, 0),
+        text: j['text'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
+/// 书签（C6）：记章节 + 滚动位置。
+class Bookmark {
+  Bookmark({
+    required this.chapterIndex,
+    required this.scrollOffset,
+    required this.label,
+    required this.createdAt,
+  });
+
+  final int chapterIndex;
+  final double scrollOffset;
+  final String label;
+  final DateTime createdAt;
+
+  Map<String, dynamic> toJson() => {
+        'chapterIndex': chapterIndex,
+        'scrollOffset': scrollOffset,
+        'label': label,
+        'createdAt': createdAt.toIso8601String(),
+      };
+
+  factory Bookmark.fromJson(Map<String, dynamic> j) => Bookmark(
+        chapterIndex: (j['chapterIndex'] as num?)?.toInt() ?? 0,
+        scrollOffset: (j['scrollOffset'] as num?)?.toDouble() ?? 0,
+        label: j['label'] as String? ?? '',
+        createdAt: DateTime.tryParse(j['createdAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
 /// 留存的 AI 解释（D8 锚点）。
 class Explanation {
   Explanation({
@@ -179,16 +249,23 @@ class BookState {
     required this.reading,
     required this.highlights,
     required this.explanations,
-  });
+    List<NoteAnn>? notes,
+    List<Bookmark>? bookmarks,
+  })  : notes = notes ?? [],
+        bookmarks = bookmarks ?? [];
 
   ReadingState reading;
   final List<Highlight> highlights;
   final List<Explanation> explanations;
+  final List<NoteAnn> notes; // C6
+  final List<Bookmark> bookmarks; // C6
 
   Map<String, dynamic> toJson() => {
         'reading': reading.toJson(),
         'highlights': highlights.map((h) => h.toJson()).toList(),
         'explanations': explanations.map((e) => e.toJson()).toList(),
+        'notes': notes.map((n) => n.toJson()).toList(),
+        'bookmarks': bookmarks.map((b) => b.toJson()).toList(),
       };
 
   factory BookState.fromJson(Map<String, dynamic> j) => BookState(
@@ -200,6 +277,12 @@ class BookState {
             .toList(),
         explanations: ((j['explanations'] as List?) ?? [])
             .map((e) => Explanation.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        notes: ((j['notes'] as List?) ?? [])
+            .map((e) => NoteAnn.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        bookmarks: ((j['bookmarks'] as List?) ?? [])
+            .map((e) => Bookmark.fromJson(e as Map<String, dynamic>))
             .toList(),
       );
 

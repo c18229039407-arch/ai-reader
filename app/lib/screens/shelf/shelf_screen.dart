@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../models/models.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
+import '../../services/book_source.dart';
+import '../reader/pdf_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
@@ -22,7 +24,13 @@ class ShelfScreen extends StatefulWidget {
 class _ShelfScreenState extends State<ShelfScreen> {
   List<Book> _books = [];
   Map<String, double> _progress = {};
+  Map<String, DateTime> _lastRead = {};
   bool _importing = false;
+
+  // B4：搜索与排序；B3：标签过滤
+  String _filter = '';
+  String _sort = 'added'; // added | title | progress | recent
+  String? _tagFilter;
 
   @override
   void initState() {
@@ -34,15 +42,47 @@ class _ShelfScreenState extends State<ShelfScreen> {
   Future<void> _refresh() async {
     final books = await widget.store.listBooks();
     final prog = <String, double>{};
+    final last = <String, DateTime>{};
     for (final b in books) {
-      prog[b.id] = (await widget.store.loadState(b.id)).reading.percent;
+      final st = await widget.store.loadState(b.id);
+      prog[b.id] = st.reading.percent;
+      last[b.id] = st.reading.updatedAt;
     }
-    if (mounted)
+    if (mounted) {
       setState(() {
         _books = books;
         _progress = prog;
+        _lastRead = last;
       });
+    }
   }
+
+  List<Book> get _visibleBooks {
+    var list = _books.where((b) {
+      final q = _filter.trim().toLowerCase();
+      final okText = q.isEmpty ||
+          b.title.toLowerCase().contains(q) ||
+          b.author.toLowerCase().contains(q);
+      final okTag = _tagFilter == null || b.tags.contains(_tagFilter);
+      return okText && okTag;
+    }).toList();
+    switch (_sort) {
+      case 'title':
+        list.sort((a, b) => a.title.compareTo(b.title));
+      case 'progress':
+        list.sort(
+            (a, b) => (_progress[b.id] ?? 0).compareTo(_progress[a.id] ?? 0));
+      case 'recent':
+        list.sort((a, b) => (_lastRead[b.id] ?? DateTime(2000))
+            .compareTo(_lastRead[a.id] ?? DateTime(2000)));
+        list = list.reversed.toList();
+      default: // added
+        list.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    }
+    return list;
+  }
+
+  Set<String> get _allTags => _books.expand((b) => b.tags).toSet();
 
   Future<void> _maybeShowPrivacy() async {
     if (widget.settings.privacyAcknowledged || !mounted) return;
@@ -77,7 +117,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
   Future<void> _import() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['epub', 'txt'],
+      allowedExtensions: ['epub', 'txt', 'pdf'],
       allowMultiple: true,
       withData: true,
     );
@@ -106,11 +146,95 @@ class _ShelfScreenState extends State<ShelfScreen> {
   }
 
   Future<void> _open(Book book) async {
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ReaderScreen(
-          book: book, store: widget.store, settings: widget.settings),
-    ));
+    if (book.format == 'pdf') {
+      final st = await widget.store.loadState(book.id);
+      if (!mounted) return;
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => PdfReaderScreen(
+          book: book,
+          filePath: widget.store.absolutePath(book),
+          initialPage: st.reading.chapterIndex + 1, // PDF 用 chapterIndex 存页码
+          onPageChanged: (page, total) async {
+            st.reading = ReadingState(
+              chapterIndex: page - 1,
+              scrollOffset: 0,
+              percent: total > 0 ? page / total : 0,
+              updatedAt: DateTime.now(),
+            );
+            await widget.store.saveState(book.id, st);
+          },
+        ),
+      ));
+    } else {
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+            book: book, store: widget.store, settings: widget.settings),
+      ));
+    }
     _refresh(); // 返回时刷新进度
+  }
+
+  Future<void> _editTags(Book book) async {
+    final controller = TextEditingController(text: book.tags.join(', '));
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('编辑标签 ·《${book.title}》'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '用逗号分隔，如：经济学, 在读',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, controller.text),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (result == null) return;
+    final tags = result
+        .split(RegExp(r'[,，]'))
+        .map((t) => t.trim())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList();
+    await widget.store.updateBook(book.copyWith(tags: tags));
+    _refresh();
+  }
+
+  void _bookMenu(Book book) {
+    showModalBottomSheet(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('编辑标签'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editTags(book);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('移除书籍'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _confirmRemove(book);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmRemove(Book book) async {
@@ -145,8 +269,21 @@ class _ShelfScreenState extends State<ShelfScreen> {
             tooltip: '公版书搜索',
             icon: const Icon(Icons.travel_explore_outlined),
             onPressed: () async {
+              // A5：内置合法源 + 用户自定义 Gutendex 兼容源
+              final sources = <BookSource>[
+                ...defaultSources,
+                ...widget.settings.customSourceUrls.asMap().entries.map(
+                      (e) => GutendexSource(
+                        baseUrl: e.value.trim(),
+                        id: 'custom-${e.key}',
+                        displayName: Uri.tryParse(e.value)?.host ?? e.value,
+                        licenseNote: '用户自定义源，内容合规责任由配置者自负',
+                      ),
+                    ),
+              ];
               await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) => SearchScreen(store: widget.store)));
+                  builder: (_) =>
+                      SearchScreen(store: widget.store, sources: sources)));
               _refresh();
             },
           ),
@@ -154,7 +291,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
             tooltip: '设置',
             icon: const Icon(Icons.settings_outlined),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SettingsScreen(settings: widget.settings))),
+                builder: (_) => SettingsScreen(
+                    settings: widget.settings, store: widget.store))),
           ),
         ],
       ),
@@ -168,7 +306,69 @@ class _ShelfScreenState extends State<ShelfScreen> {
             : const Icon(Icons.add),
         label: Text(_importing ? '导入中…' : '导入书籍'),
       ),
-      body: _books.isEmpty ? _empty(context) : _grid(context),
+      body: _books.isEmpty
+          ? _empty(context)
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          decoration: const InputDecoration(
+                            hintText: '搜索书名 / 作者…',
+                            prefixIcon: Icon(Icons.search, size: 20),
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (v) => setState(() => _filter = v),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      PopupMenuButton<String>(
+                        tooltip: '排序',
+                        icon: const Icon(Icons.sort),
+                        initialValue: _sort,
+                        onSelected: (v) => setState(() => _sort = v),
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(value: 'added', child: Text('最近添加')),
+                          PopupMenuItem(value: 'recent', child: Text('最近阅读')),
+                          PopupMenuItem(value: 'title', child: Text('书名')),
+                          PopupMenuItem(value: 'progress', child: Text('进度')),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (_allTags.isNotEmpty)
+                  SizedBox(
+                    height: 44,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 6),
+                      children: [
+                        FilterChip(
+                          label: const Text('全部'),
+                          selected: _tagFilter == null,
+                          onSelected: (_) => setState(() => _tagFilter = null),
+                        ),
+                        ..._allTags.map((t) => Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: FilterChip(
+                                label: Text(t),
+                                selected: _tagFilter == t,
+                                onSelected: (_) => setState(() =>
+                                    _tagFilter = _tagFilter == t ? null : t),
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                Expanded(child: _grid(context)),
+              ],
+            ),
     );
   }
 
@@ -200,14 +400,14 @@ class _ShelfScreenState extends State<ShelfScreen> {
           crossAxisSpacing: 16,
           mainAxisSpacing: 16,
         ),
-        itemCount: _books.length,
+        itemCount: _visibleBooks.length,
         itemBuilder: (_, i) {
-          final b = _books[i];
+          final b = _visibleBooks[i];
           final pct = _progress[b.id] ?? 0;
           return InkWell(
             borderRadius: BorderRadius.circular(10),
             onTap: () => _open(b),
-            onLongPress: () => _confirmRemove(b),
+            onLongPress: () => _bookMenu(b),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

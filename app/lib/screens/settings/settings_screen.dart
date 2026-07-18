@@ -1,14 +1,21 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../services/library_store.dart';
 import '../../services/ollama_client.dart';
 import '../../services/settings_store.dart';
 
-/// 设置页（F1/F1b/F2/F3 + D7 画像）。
+/// 设置页（F1/F1b/F2/F3 + D7 画像 + A5 自定义源 + B5 备份）。
 class SettingsScreen extends StatefulWidget {
-  const SettingsScreen({super.key, required this.settings});
+  const SettingsScreen({super.key, required this.settings, this.store});
 
   final SettingsStore settings;
+  final LibraryStore? store;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -72,6 +79,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
       freeDescription: _free.text,
       personalizeOn: s.profile.personalizeOn,
     ));
+  }
+
+  Future<void> _exportBundle() async {
+    final json = await widget.store!.exportBundle();
+    final bytes = Uint8List.fromList(utf8.encode(json));
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: '导出 AI Reader 备份',
+      fileName:
+          'ai-reader-backup-${DateTime.now().toIso8601String().substring(0, 10)}.json',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      bytes: bytes,
+    );
+    if (path != null) {
+      final f = File(path);
+      if (!await f.exists() || (await f.length()) == 0) {
+        await f.writeAsString(json); // 桌面端 saveFile 只回路径时自行写入
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('备份已导出')));
+      }
+    }
+  }
+
+  Future<void> _importBundle() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+      withData: true,
+    );
+    final bytes = result?.files.single.bytes;
+    if (bytes == null) return;
+    try {
+      final added = await widget.store!.importBundle(utf8.decode(bytes));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('导入完成：新增 $added 本书目，阅读记录已合并')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('导入失败：$e')));
+      }
+    }
   }
 
   @override
@@ -174,6 +226,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     border: OutlineInputBorder()),
                 onChanged: (_) => _saveProfile(),
               ),
+              const SizedBox(height: 28),
+              Text('自定义公版书源（实验，A5）',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              TextField(
+                controller:
+                    TextEditingController(text: s.customSourceUrls.join('\n')),
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  hintText: '每行一个 Gutendex 兼容源的地址（默认已含 gutendex.com）',
+                  helperText: '自行添加的数据源，内容合规责任由你自负',
+                  helperMaxLines: 2,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) => s.customSourceUrls = v.split('\n'),
+              ),
+              if (widget.store != null) ...[
+                const SizedBox(height: 28),
+                Text('数据备份（B5）',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 4),
+                Text('导出/导入书架元数据与全部阅读记录（进度/高亮/笔记/解释）。不含书籍文件本体。',
+                    style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 8),
+                Row(children: [
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.upload_outlined, size: 18),
+                    label: const Text('导出备份'),
+                    onPressed: _exportBundle,
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.download_outlined, size: 18),
+                    label: const Text('导入备份'),
+                    onPressed: _importBundle,
+                  ),
+                ]),
+              ],
               const SizedBox(height: 28),
               Text('隐私', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
