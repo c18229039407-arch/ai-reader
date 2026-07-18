@@ -1,0 +1,35 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+**/Pods/
+**/ephemeral/
+
+# Android
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+*.keystore
+*.jks
+
+# 环境与密钥（绝不入库）
+.env
+*.env
+**/api_keys.*
+
+# 本地测试用书籍文件（版权原因不入库）
+/books/
+*.epub
+*.mobi
+*.azw3
+!test/fixtures/public_domain/*.epub
