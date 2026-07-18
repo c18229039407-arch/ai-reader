@@ -3,8 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-/// 极简 Ollama 客户端：健康检查、模型列表、流式对话。
-/// Phase 0 只验证链路，不做重试/超时策略等工程化处理。
+/// Ollama 客户端：健康检查、模型列表、流式对话（支持多轮消息）。
 class OllamaClient {
   OllamaClient(this.baseUrl);
 
@@ -34,11 +33,21 @@ class OllamaClient {
         .toList();
   }
 
-  /// 流式返回增量文本片段。调用方自行拼接与展示。
+  /// 单轮便捷入口（system + user）。
   Stream<String> chatStream({
     required String model,
     required String system,
     required String user,
+  }) =>
+      chatStreamMessages(model: model, messages: [
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': user},
+      ]);
+
+  /// 多轮消息流式接口（D5 追问的基础）。
+  Stream<String> chatStreamMessages({
+    required String model,
+    required List<Map<String, String>> messages,
   }) async* {
     final client = http.Client();
     try {
@@ -47,10 +56,7 @@ class OllamaClient {
         ..body = jsonEncode({
           'model': model,
           'stream': true,
-          'messages': [
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': user},
-          ],
+          'messages': messages,
         });
       final res = await client.send(req);
       if (res.statusCode != 200) {

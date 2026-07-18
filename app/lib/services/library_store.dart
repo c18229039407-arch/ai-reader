@@ -19,9 +19,12 @@ import 'txt_loader.dart';
 ///
 /// root 由调用方注入（App 用 path_provider 取，测试用临时目录）。
 class LibraryStore {
-  LibraryStore(this.rootDir);
+  LibraryStore(this.rootDir, {this.deviceId = 'local'});
 
   final Directory rootDir;
+
+  /// 本设备标识（E4）：决定本机状态文件名，避免多设备写同一文件。
+  final String deviceId;
 
   Directory get _booksDir => Directory(p.join(rootDir.path, 'books'));
   Directory get _stateDir => Directory(p.join(rootDir.path, 'state'));
@@ -103,8 +106,17 @@ class LibraryStore {
     await _saveBooks(books.where((b) => b.id != id).toList());
     final f = File(p.join(rootDir.path, book.filePath));
     if (await f.exists()) await f.delete();
-    final s = _stateFile(id);
-    if (await s.exists()) await s.delete();
+    // 清理该书所有设备的状态文件
+    if (await _stateDir.exists()) {
+      await for (final e in _stateDir.list()) {
+        final name = p.basename(e.path);
+        if (e is File &&
+            name.endsWith('.json') &&
+            (name == '$id.json' || name.startsWith('$id.'))) {
+          await e.delete();
+        }
+      }
+    }
   }
 
   /// 读取书的内容（阅读器用）。
@@ -116,20 +128,67 @@ class LibraryStore {
     return loadEpub(bytes);
   }
 
-  // ---------- 每本书的状态 ----------
+  // ---------- 每本书的状态（E3/E4：按设备分文件写、读取时合并）----------
+  //
+  // 写入：state/<bookId>.<deviceId>.json —— 每台设备只写自己的文件，
+  // Syncthing 同步目录时不会产生二进制冲突。
+  // 读取：合并该书的所有设备文件（含旧版无 deviceId 的 legacy 文件）：
+  //   reading   → 取 updatedAt 最新的一份
+  //   highlights→ 按 locator+createdAt 去重求并集
+  //   explanations → 按 id 去重求并集
 
   File _stateFile(String bookId) =>
-      File(p.join(_stateDir.path, '$bookId.json'));
+      File(p.join(_stateDir.path, '$bookId.$deviceId.json'));
 
   Future<BookState> loadState(String bookId) async {
-    final f = _stateFile(bookId);
-    if (!await f.exists()) return BookState.empty();
-    try {
-      return BookState.fromJson(
-          jsonDecode(await f.readAsString()) as Map<String, dynamic>);
-    } catch (_) {
-      return BookState.empty();
+    final files = <File>[];
+    if (await _stateDir.exists()) {
+      await for (final e in _stateDir.list()) {
+        final name = p.basename(e.path);
+        if (e is File &&
+            name.endsWith('.json') &&
+            (name == '$bookId.json' || name.startsWith('$bookId.'))) {
+          files.add(e);
+        }
+      }
     }
+    if (files.isEmpty) return BookState.empty();
+
+    final states = <BookState>[];
+    for (final f in files) {
+      try {
+        states.add(BookState.fromJson(
+            jsonDecode(await f.readAsString()) as Map<String, dynamic>));
+      } catch (_) {
+        // 单个损坏文件不拖垮整体
+      }
+    }
+    if (states.isEmpty) return BookState.empty();
+    return mergeStates(states);
+  }
+
+  /// 合并多设备状态（纯函数，可测试）。
+  static BookState mergeStates(List<BookState> states) {
+    if (states.isEmpty) return BookState.empty();
+    var reading = states.first.reading;
+    final highlights = <String, Highlight>{};
+    final explanations = <String, Explanation>{};
+    for (final s in states) {
+      if (s.reading.updatedAt.isAfter(reading.updatedAt)) {
+        reading = s.reading;
+      }
+      for (final h in s.highlights) {
+        highlights['${h.locator}|${h.createdAt.toIso8601String()}'] = h;
+      }
+      for (final e in s.explanations) {
+        explanations[e.id] = e;
+      }
+    }
+    final hs = highlights.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final es = explanations.values.toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return BookState(reading: reading, highlights: hs, explanations: es);
   }
 
   Future<void> saveState(String bookId, BookState state) async {

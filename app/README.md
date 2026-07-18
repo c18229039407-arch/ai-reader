@@ -1,19 +1,24 @@
-# AI Reader App（Phase 1 MVP）
+# AI Reader App（Phase 1 MVP + Phase 2）
 
-正式应用工程（spike 验证后的实现版）。MVP 目标：**macOS 单端可用闭环**——本地导入书籍、双主题阅读、进度/高亮持久化、AI 个性化解释 + ✦ 解释锚点，全程零 API 费用（本机 Ollama）。
+正式应用工程。当前进度：**Phase 1（macOS 闭环）与 Phase 2 的全部功能代码已完成**，剩真机验证。
 
 ## 已实现（对应 PRD 功能编号）
 
 | 模块 | 功能 |
 |---|---|
 | 导入 A1 | EPUB / TXT 多选导入，内容去重，TXT 自动按「第X章/Chapter N」切章 |
+| 公版书 A2/A3 | 内置 Project Gutenberg（Gutendex）搜索 → 一键下载入书架；数据源为可插拔 `BookSource` 接口，随包仅合法源，UI 展示许可说明 |
 | 书架 B1/B2 | 封面墙 + 阅读进度条；长按移除；数据全本地（JSON，Syncthing 友好布局） |
-| 阅读 C1–C5/C9 | 章节渲染、字号/行距/边距调节、跟随系统/日间/夜间/纸质主题、精确进度恢复、段落高亮、目录抽屉与上下章 |
-| AI D1–D4/D7 | 划选 → 右键「AI 解释/翻译」；解释携带书名/章节/前后文上下文；画像（职业/兴趣/自由描述）个性化类比，可关闭 |
-| 锚点 D8 | 解释自动留存；被解释段落尾部常驻 ✦，点击秒开（不重新请求模型）；重开书仍在 |
-| 设置 F1–F3 | 自动检测 Ollama、模型下拉、AI 总开关、首启隐私说明 |
+| 阅读 C1–C5/C9 | 章节渲染、字号/行距/边距调节、四主题、精确进度恢复、段落高亮、目录抽屉与上下章 |
+| AI D1–D4/D7 | 划选 → 右键「AI 解释/翻译」；上下文组装 + 画像个性化；宽屏侧栏/窄屏抽屉 |
+| 追问 D5/D6 | 解释面板内「换个例子 / 更深入 / 一句话」+ 自由追问，多轮保留完整上下文 |
+| 锚点 D8 | 解释自动留存；段落尾 ✦ 常驻，点击秒开；重开书仍在 |
+| 概念本 D10 | 全书留存解释汇总页，可展开回看、跳回原文 |
+| 翻译 G1/G2/G3/G4 | 选段即时翻译；全书批量翻译（本地模型零成本、实时落盘、可暂停断点续跑、进度条）；原文/译文/双语对照三种显示模式；UI 明示本地译文为辅助理解级 |
+| 同步 E3/E4 数据层 | 状态按设备分文件写入（`state/<书>.<设备>.json`）、读取时自动合并（进度取最新、高亮/解释求并集）——Syncthing 同步目录即可双端互通，无二进制冲突 |
+| 设置 F1–F3 | 自动检测 Ollama、模型下拉、AI 总开关、设备标识、首启隐私说明 |
 
-MVP 已知简化：高亮为段落级、单色（V1 做字符级多色）；EPUB 图片/CSS 不渲染（V1 渲染专项）；TXT 仅支持 UTF-8（GBK 文件请先转码）。
+已知简化：高亮为段落级单色；EPUB 图片/CSS 不渲染（渲染专项在 Phase 3）；TXT 仅 UTF-8。
 
 ## 在 Mac 上运行
 
@@ -52,7 +57,15 @@ flutter run -d macos
 ## 测试
 
 ```bash
-flutter test        # 18 项：存储/解析/提示词/界面（沙箱已全绿）
+flutter test        # 24 项：存储/解析/提示词/合并/翻译/公版源/界面（沙箱已全绿）
 flutter analyze     # 0 警告（沙箱已验证）
-dart run tool/ollama_link_check.dart   # 可选：Ollama 链路端到端检查
+E2E=1 flutter test test/e2e/phase2_e2e_test.dart  # 真网络+真模型端到端（沙箱已跑通）
 ```
+
+## 沙箱端到端实录（2026-07-18）
+
+真实 Gutendex 搜索《吶喊》→ 下载 179KB EPUB → 入库 → 真实模型批量翻译前 2 段并落盘续跑，全链路 PASS。注意：沙箱用的 0.5B 小模型译文质量明显不可用（正好验证 G4 的必要性）；真实质量以 Mac 上 qwen2.5:7b/14b 实测为准。
+
+## Android 端运行（Phase 2）
+
+同一套代码。`flutter create` 已含 android 平台后：给 `android/app/src/main/AndroidManifest.xml` 的 `<application` 加 `android:usesCleartextTraffic="true"`（连局域网 Ollama 需要）；App 内 Ollama 地址填 `http://<Mac的IP>:11434`。双端同步：把两台设备的书库目录（macOS 为 `~/Library/Application Support/AIReader`，Android 为应用文档目录）加入同一个 Syncthing 共享文件夹即可。

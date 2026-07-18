@@ -12,7 +12,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final settings = await SettingsStore.load();
   final support = await getApplicationSupportDirectory();
-  final store = LibraryStore(Directory(p.join(support.path, 'AIReader')));
+  final store = LibraryStore(Directory(p.join(support.path, 'AIReader')),
+      deviceId: settings.deviceId);
   await store.init();
   runApp(AIReaderApp(settings: settings, store: store));
 }

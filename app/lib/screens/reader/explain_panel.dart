@@ -2,27 +2,31 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-/// 解释/翻译展示面板：既用于「实时流式输出」（新请求），
-/// 也用于「秒开留存内容」（D8 锚点点击，savedText != null）。
-/// 宽屏嵌为侧栏，窄屏放进底部抽屉——由外层决定容器，本组件只管内容。
+import '../../services/explain_service.dart';
+
+/// 解释/翻译面板。三种用法：
+/// 1) 新请求：传 [session]，流式输出，完成后可「换例/更深/一句话/追问」（D5/D6）；
+/// 2) 锚点秒开：传 [savedText]，直接展示留存内容；
+/// 宽屏嵌侧栏 / 窄屏进底部抽屉由外层决定，本组件只管内容。
 class ExplainPanel extends StatefulWidget {
   const ExplainPanel({
     super.key,
     required this.title,
     required this.quotedText,
-    this.stream,
+    this.session,
     this.savedText,
-    this.onDone,
+    this.onFirstAnswer,
     this.onClose,
-  }) : assert(stream != null || savedText != null, 'stream 与 savedText 至少提供一个');
+  }) : assert(
+            session != null || savedText != null, 'session 与 savedText 至少提供一个');
 
   final String title;
   final String quotedText;
-  final Stream<String>? stream;
+  final ExplainSession? session;
   final String? savedText;
 
-  /// 流式完成后回调完整文本（用于留存，D8）。
-  final void Function(String fullText)? onDone;
+  /// 首轮回答完成的回调（用于 D8 留存；追问轮不再重复留存）。
+  final void Function(String fullText)? onFirstAnswer;
   final VoidCallback? onClose;
 
   @override
@@ -36,6 +40,10 @@ class _ExplainPanelState extends State<ExplainPanel> {
   int? _firstTokenMs;
   int? _totalMs;
   Object? _error;
+  bool _streamDone = false;
+  bool _firstRound = true;
+  final _followUp = TextEditingController();
+
   bool get _isSaved => widget.savedText != null;
 
   @override
@@ -43,26 +51,57 @@ class _ExplainPanelState extends State<ExplainPanel> {
     super.initState();
     if (_isSaved) {
       _buffer.write(widget.savedText);
+      _streamDone = true;
     } else {
-      _stopwatch.start();
-      _sub = widget.stream!.listen(
-        (chunk) {
-          _firstTokenMs ??= _stopwatch.elapsedMilliseconds;
-          setState(() => _buffer.write(chunk));
-        },
-        onError: (e) => setState(() => _error = e),
-        onDone: () {
-          setState(() => _totalMs = _stopwatch.elapsedMilliseconds);
-          if (_buffer.isNotEmpty) widget.onDone?.call(_buffer.toString());
-        },
-      );
+      _start();
     }
+  }
+
+  void _start() {
+    _stopwatch
+      ..reset()
+      ..start();
+    _firstTokenMs = null;
+    _totalMs = null;
+    _streamDone = false;
+    _buffer.clear();
+    _sub = widget.session!.send().listen(
+      (chunk) {
+        _firstTokenMs ??= _stopwatch.elapsedMilliseconds;
+        if (mounted) setState(() => _buffer.write(chunk));
+      },
+      onError: (e) {
+        if (mounted) setState(() => _error = e);
+      },
+      onDone: () {
+        final full = _buffer.toString();
+        widget.session!.commitAssistant(full);
+        if (_firstRound && full.isNotEmpty) {
+          widget.onFirstAnswer?.call(full);
+          _firstRound = false;
+        }
+        if (mounted) {
+          setState(() {
+            _totalMs = _stopwatch.elapsedMilliseconds;
+            _streamDone = true;
+          });
+        }
+      },
+    );
+  }
+
+  void _ask(String instruction) {
+    if (!_streamDone || widget.session == null) return;
+    widget.session!.addFollowUp(instruction);
+    _sub?.cancel();
+    setState(_start);
   }
 
   @override
   void dispose() {
     _sub?.cancel();
     _stopwatch.stop();
+    _followUp.dispose();
     super.dispose();
   }
 
@@ -122,6 +161,67 @@ class _ExplainPanelState extends State<ExplainPanel> {
                           style: const TextStyle(fontSize: 15, height: 1.7)),
             ),
           ),
+          // D5/D6：追问与深度控制（仅会话模式、且当前轮已完成时可用）
+          if (!_isSaved) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                ActionChip(
+                  label: const Text('换个例子'),
+                  onPressed: _streamDone
+                      ? () => _ask(ExplainSession.presets['anotherExample']!)
+                      : null,
+                ),
+                ActionChip(
+                  label: const Text('更深入'),
+                  onPressed: _streamDone
+                      ? () => _ask(ExplainSession.presets['deeper']!)
+                      : null,
+                ),
+                ActionChip(
+                  label: const Text('一句话'),
+                  onPressed: _streamDone
+                      ? () => _ask(ExplainSession.presets['oneLiner']!)
+                      : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _followUp,
+                    enabled: _streamDone,
+                    decoration: const InputDecoration(
+                      hintText: '继续追问…',
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (v) {
+                      if (v.trim().isEmpty) return;
+                      _followUp.clear();
+                      _ask(v.trim());
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: _streamDone
+                      ? () {
+                          final v = _followUp.text.trim();
+                          if (v.isEmpty) return;
+                          _followUp.clear();
+                          _ask(v);
+                        }
+                      : null,
+                  icon: const Icon(Icons.send, size: 18),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

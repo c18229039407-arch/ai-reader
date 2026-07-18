@@ -14,6 +14,17 @@ class SettingsStore extends ChangeNotifier {
   static Future<SettingsStore> load() async =>
       SettingsStore(await SharedPreferences.getInstance());
 
+  // ---------- 设备标识（E4）----------
+  String get deviceId {
+    var id = _prefs.getString('device_id');
+    if (id == null || id.isEmpty) {
+      id =
+          'd${DateTime.now().millisecondsSinceEpoch.toRadixString(36)}${identityHashCode(this).toRadixString(36)}';
+      _prefs.setString('device_id', id);
+    }
+    return id;
+  }
+
   // ---------- AI（F1）----------
   String get ollamaUrl =>
       _prefs.getString('ollama_url') ?? 'http://127.0.0.1:11434';

@@ -5,6 +5,7 @@ import '../../models/models.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
 import '../reader/reader_screen.dart';
+import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
 
 /// 书架（B1/B2）+ 导入（A1）+ 首次隐私说明（F3）。
@@ -140,6 +141,15 @@ class _ShelfScreenState extends State<ShelfScreen> {
       appBar: AppBar(
         title: const Text('书架'),
         actions: [
+          IconButton(
+            tooltip: '公版书搜索',
+            icon: const Icon(Icons.travel_explore_outlined),
+            onPressed: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => SearchScreen(store: widget.store)));
+              _refresh();
+            },
+          ),
           IconButton(
             tooltip: '设置',
             icon: const Icon(Icons.settings_outlined),

@@ -3,11 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../services/batch_translator.dart';
 import '../../services/epub_loader.dart';
 import '../../services/explain_service.dart';
 import '../../services/library_store.dart';
 import '../../services/ollama_client.dart';
 import '../../services/settings_store.dart';
+import '../../services/translation_store.dart';
+import 'concepts_screen.dart';
 import 'explain_panel.dart';
 
 /// 高亮色板（C5）。
@@ -17,19 +20,23 @@ const highlightColors = [
   Color(0x6664B5F6), // 蓝
 ];
 
-/// 阅读器（C1–C5/C9 + D1–D4/D8 锚点）。
-/// 宽屏（≥900）解释显示为右侧常驻面板；窄屏为底部抽屉。
+/// 正文显示模式（G3）。
+enum DisplayMode { original, translated, bilingual }
+
+/// 阅读器（C1–C5/C9 + D1–D8 + G1–G4）。
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
     super.key,
     required this.book,
     required this.store,
     required this.settings,
+    this.translationStore,
   });
 
   final Book book;
   final LibraryStore store;
   final SettingsStore settings;
+  final TranslationStore? translationStore;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -40,13 +47,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
   BookState _state = BookState.empty();
   Object? _loadError;
 
+  late final TranslationStore _tStore =
+      widget.translationStore ?? TranslationStore(widget.store.rootDir);
+  BookTranslation _translation = BookTranslation.empty();
+  BatchTranslator? _batch;
+  DisplayMode _mode = DisplayMode.original;
+
   int _chapterIndex = 0;
   final _scroll = ScrollController();
   Timer? _saveDebounce;
 
   String _selectedText = '';
-
-  // 宽屏侧栏面板内容（null = 关闭）
   Widget? _sidePanel;
 
   ChapterText? get _chapter =>
@@ -65,13 +76,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
     try {
       final content = await widget.store.loadContent(widget.book);
       final state = await widget.store.loadState(widget.book.id);
+      final translation = await _tStore.load(widget.book.id);
       setState(() {
         _content = content;
         _state = state;
+        _translation = translation;
         _chapterIndex =
             state.reading.chapterIndex.clamp(0, content.chapters.length - 1);
       });
-      // 恢复滚动位置（C4）
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients &&
             state.reading.scrollOffset > 0 &&
@@ -111,13 +123,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void dispose() {
     _saveDebounce?.cancel();
     _saveProgress();
+    _batch?.pause();
     _scroll.dispose();
     super.dispose();
   }
 
-  // ---------- 定位与状态操作 ----------
+  // ---------- 定位与状态 ----------
 
-  /// 用所选文本在当前章定位段落（MVP 段落级锚点）。
   int? _locateParagraph(String selected) {
     final ch = _chapter;
     if (ch == null || selected.trim().isEmpty) return null;
@@ -187,9 +199,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
       return;
     }
 
-    final stream = translate
-        ? svc.translate(selected)
-        : svc.explain(
+    final session = translate
+        ? svc.translateSession(selected)
+        : svc.explainSession(
             bookTitle: _content!.title,
             chapter: ch,
             paragraphIndex: para ?? 0,
@@ -200,8 +212,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _showPanel(ExplainPanel(
       title: translate ? 'AI 翻译' : 'AI 解释',
       quotedText: selected,
-      stream: stream,
-      onDone: (full) => _persistExplanation(
+      session: session,
+      onFirstAnswer: (full) => _persistExplanation(
           para: para, selected: selected, result: full, translate: translate),
       onClose: _closePanel,
     ));
@@ -225,7 +237,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       createdAt: DateTime.now(),
     ));
     await widget.store.saveState(widget.book.id, _state);
-    if (mounted) setState(() {}); // 让 ✦ 锚点出现
+    if (mounted) setState(() {});
   }
 
   void _openSaved(int para) {
@@ -236,13 +248,66 @@ class _ReaderScreenState extends State<ReaderScreen> {
       title: e.mode == 'translate' ? 'AI 翻译' : 'AI 解释',
       quotedText: e.term,
       savedText: list.length > 1
-          ? '${e.resultText}\n\n——共 ${list.length} 条留存，此为最新——'
+          ? '${e.resultText}\n\n——共 ${list.length} 条留存，此为最新（概念本可看全部）——'
           : e.resultText,
       onClose: _closePanel,
     ));
   }
 
-  // ---------- 面板容器：宽屏侧栏 / 窄屏抽屉 ----------
+  // ---------- 批量翻译（G2/G4） ----------
+
+  Future<void> _startBatchTranslate() async {
+    final svc = _service();
+    final content = _content;
+    if (svc == null || content == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('AI 未就绪，无法批量翻译。')));
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('全书批量翻译'),
+        content: Text(
+          '将用本地模型（${widget.settings.model}）把整本书逐段翻译为中文，'
+          '零 API 费用，但需要较长时间（可挂机，可随时暂停，断点续跑）。\n\n'
+          '注意：本地模型译文为「辅助理解级」，非出版级。\n'
+          '共 ${content.chapters.fold(0, (n, c) => n + c.paragraphs.length)} 段，'
+          '已完成 ${_translation.paras.length} 段。',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('开始/继续')),
+        ],
+      ),
+    );
+    if (go != true) return;
+
+    _batch = BatchTranslator(
+      client: OllamaClient(widget.settings.ollamaUrl),
+      model: widget.settings.model,
+      store: _tStore,
+      bookId: widget.book.id,
+      book: content,
+    );
+    _batch!.status.addListener(() async {
+      if (!mounted) return;
+      if (_batch!.status.value == BatchStatus.completed ||
+          _batch!.status.value == BatchStatus.paused ||
+          _batch!.status.value == BatchStatus.error) {
+        _translation = await _tStore.load(widget.book.id);
+        if (mounted) setState(() {});
+      }
+    });
+    setState(() {});
+    unawaited(_batch!.run());
+  }
+
+  // ---------- 面板容器 ----------
 
   bool get _wide => MediaQuery.of(context).size.width >= 900;
 
@@ -253,8 +318,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.66),
         builder: (_) => SafeArea(child: panel),
       );
     }
@@ -268,20 +333,28 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
-  // ---------- 章节导航（C9） ----------
+  // ---------- 导航 ----------
 
-  void _goto(int index) {
+  void _goto(int index, {int? paragraph}) {
     final content = _content;
     if (content == null) return;
     setState(() => _chapterIndex = index.clamp(0, content.chapters.length - 1));
     if (_scroll.hasClients) _scroll.jumpTo(0);
+    // 段落级跳转（概念本回跳）：MVP 用固定估算滚动，V1 换精确测量
+    if (paragraph != null && paragraph > 0 && _scroll.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scroll.hasClients) return;
+        final target =
+            (paragraph * 90.0).clamp(0.0, _scroll.position.maxScrollExtent);
+        _scroll.jumpTo(target);
+      });
+    }
     _saveProgress();
   }
 
   // ---------- 构建 ----------
 
   Color? _readerBackground(BuildContext context) {
-    // C3：护眼纸质主题只影响阅读页背景
     if (widget.settings.readerTheme == 3 &&
         Theme.of(context).brightness == Brightness.light) {
       return const Color(0xFFF5ECD9);
@@ -311,6 +384,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
 
     final s = widget.settings;
+    final hasAnyTranslation = _translation.paras.isNotEmpty;
 
     return Scaffold(
       backgroundColor: _readerBackground(context),
@@ -318,10 +392,47 @@ class _ReaderScreenState extends State<ReaderScreen> {
         title: Text('${content.title} · ${ch.title}',
             overflow: TextOverflow.ellipsis),
         actions: [
+          if (hasAnyTranslation)
+            PopupMenuButton<DisplayMode>(
+              tooltip: '显示模式（原文/译文/对照）',
+              icon: const Icon(Icons.translate),
+              initialValue: _mode,
+              onSelected: (m) => setState(() => _mode = m),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: DisplayMode.original, child: Text('原文')),
+                PopupMenuItem(value: DisplayMode.translated, child: Text('译文')),
+                PopupMenuItem(
+                    value: DisplayMode.bilingual, child: Text('双语对照')),
+              ],
+            ),
           IconButton(
-            tooltip: '排版设置',
-            icon: const Icon(Icons.text_fields),
-            onPressed: _showTypography,
+            tooltip: '概念本',
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ConceptsScreen(
+                bookTitle: content.title,
+                explanations: _state.explanations,
+                onJump: (loc) => _goto(loc.chapter, paragraph: loc.paragraph),
+              ),
+            )),
+          ),
+          PopupMenuButton<String>(
+            tooltip: '更多',
+            onSelected: (v) {
+              if (v == 'batch') _startBatchTranslate();
+              if (v == 'pause') _batch?.pause();
+              if (v == 'typo') _showTypography();
+            },
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'typo', child: Text('排版设置')),
+              PopupMenuItem(
+                  value: 'batch',
+                  child: Text(_translation.completed
+                      ? '重新检查批量翻译'
+                      : '全书批量翻译${_translation.paras.isNotEmpty ? '（续跑）' : ''}')),
+              if (_batch?.status.value == BatchStatus.running)
+                const PopupMenuItem(value: 'pause', child: Text('暂停翻译')),
+            ],
           ),
           IconButton(
             tooltip: '上一章',
@@ -355,19 +466,67 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ),
         ),
       ),
-      body: Row(
+      body: Column(
         children: [
-          Expanded(child: _readerBody(ch, s)),
-          if (_wide && _sidePanel != null)
-            Container(
-              width: 340,
-              decoration: BoxDecoration(
-                border: Border(
-                    left: BorderSide(
-                        color: Theme.of(context).dividerColor, width: 0.5)),
-              ),
-              child: _sidePanel,
+          if (_batch != null)
+            ValueListenableBuilder<BatchStatus>(
+              valueListenable: _batch!.status,
+              builder: (_, st, __) {
+                if (st == BatchStatus.idle) return const SizedBox.shrink();
+                return ValueListenableBuilder<double>(
+                  valueListenable: _batch!.progress,
+                  builder: (_, p, __) => Column(
+                    children: [
+                      LinearProgressIndicator(value: p, minHeight: 3),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        child: Row(
+                          children: [
+                            Text(
+                              switch (st) {
+                                BatchStatus.running =>
+                                  '批量翻译中 ${(p * 100).toStringAsFixed(1)}%（可关书，进度已实时落盘）',
+                                BatchStatus.paused => '翻译已暂停（下次可续跑）',
+                                BatchStatus.completed => '全书翻译完成 ✓',
+                                BatchStatus.error =>
+                                  '翻译出错：${_batch!.lastError.value}',
+                                _ => '',
+                              },
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            const Spacer(),
+                            if (st == BatchStatus.running)
+                              TextButton(
+                                  onPressed: () => _batch!.pause(),
+                                  child: const Text('暂停',
+                                      style: TextStyle(fontSize: 12))),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _readerBody(ch, s)),
+                if (_wide && _sidePanel != null)
+                  Container(
+                    width: 360,
+                    decoration: BoxDecoration(
+                      border: Border(
+                          left: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                              width: 0.5)),
+                    ),
+                    child: _sidePanel,
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -412,9 +571,33 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Widget _paragraph(ChapterText ch, int i, SettingsStore s) {
     final hl = _highlightAt(i);
     final hasExplain = _explanationsAt(i).isNotEmpty;
+    final translated = _translation.of(_chapterIndex, i);
 
-    final text = Text(ch.paragraphs[i],
-        style: TextStyle(fontSize: s.fontSize, height: s.lineHeight));
+    final baseStyle = TextStyle(fontSize: s.fontSize, height: s.lineHeight);
+    final dimStyle = TextStyle(
+        fontSize: s.fontSize - 1,
+        height: s.lineHeight,
+        color: Theme.of(context).colorScheme.outline);
+
+    Widget body;
+    switch (_mode) {
+      case DisplayMode.original:
+        body = Text(ch.paragraphs[i], style: baseStyle);
+      case DisplayMode.translated:
+        body = Text(translated ?? ch.paragraphs[i],
+            style: translated != null ? baseStyle : dimStyle);
+      case DisplayMode.bilingual:
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(ch.paragraphs[i], style: baseStyle),
+            if (translated != null) ...[
+              const SizedBox(height: 4),
+              Text(translated, style: dimStyle),
+            ],
+          ],
+        );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -429,7 +612,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ? Wrap(
                 crossAxisAlignment: WrapCrossAlignment.end,
                 children: [
-                  text,
+                  body,
                   GestureDetector(
                     onTap: () => _openSaved(i),
                     child: Container(
@@ -447,7 +630,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ),
                 ],
               )
-            : text,
+            : body,
       ),
     );
   }
