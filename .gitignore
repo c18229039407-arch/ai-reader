@@ -36,3 +36,9 @@ build/
 
 # spike 沙箱生成的平台工程（用户按 README 自行生成 macos/android）
 spike/phase0/linux/
+app/linux/
+app/macos/
+app/android/
+app/ios/
+app/windows/
+app/web/
