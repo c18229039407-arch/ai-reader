@@ -69,9 +69,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         actions: [
           IconButton(
             tooltip: '上一章',
-            onPressed: _chapterIndex > 0
-                ? () => _goto(_chapterIndex - 1)
-                : null,
+            onPressed:
+                _chapterIndex > 0 ? () => _goto(_chapterIndex - 1) : null,
             icon: const Icon(Icons.chevron_left),
           ),
           IconButton(

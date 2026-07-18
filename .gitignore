@@ -33,3 +33,6 @@ build/
 *.mobi
 *.azw3
 !test/fixtures/public_domain/*.epub
+
+# spike 沙箱生成的平台工程（用户按 README 自行生成 macos/android）
+spike/phase0/linux/

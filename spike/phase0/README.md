@@ -60,8 +60,10 @@ App 内把 Ollama 地址改成 `http://<Mac的局域网IP>:11434`（IP 用 `ipco
 
 测试用公版书（合法免费下载 EPUB）：
 
-- 中文：维基文库 / Project Gutenberg 中文书（如鲁迅《呐喊》，PG 编号 25305）
+- 中文：维基文库 / Project Gutenberg 中文书（如鲁迅《呐喊》，PG 编号 **27166**）
 - 英文：Standard Ebooks（standardebooks.org）任选，排版质量高，适合测排版
+
+> 沙箱实测发现：PG 的老中文 EPUB 目录质量差（《呐喊》只解析出 2 个章节、标题为正文片段）。解析器本身工作正常（Alice 16 章全对），这是源文件的 NCX 目录问题，属于 Phase 1「渲染/目录增强」要处理的真实案例。
 
 ## 四、已知取舍（spike 阶段故意为之）
 
@@ -69,7 +71,22 @@ App 内把 Ollama 地址改成 `http://<Mac的局域网IP>:11434`（IP 用 `ipco
 - **无阅读进度持久化 / 无标注**：Phase 1 内容。
 - **翻译按钮已带**（选段 → AI 翻译），顺手验证 G1 链路，非本阶段验收项。
 
-## 五、常见问题
+## 五、沙箱预验证结果（2026-07-18，Linux 云环境）
+
+以下项目已在云端沙箱（Flutter 3.35.3 / Dart 3.9）预先验证通过，**不需要你重复**；你只需跑「三、验收清单」里剩下的真机项：
+
+| 已验证 | 方式 | 结果 |
+|---|---|---|
+| 依赖解析 + 静态分析 | `flutter pub get` + `flutter analyze` | 0 错误 0 警告 |
+| 单元/widget 测试 ×9 | `flutter test`（首页、阅读页、Ollama 协议层） | 全部通过 |
+| EPUB 真书解析 | Gutenberg《呐喊》(zh) + Alice (en) | 通过；PG 老中文书目录质量差（见上文备注） |
+| Ollama 全链路 | 真实模型（Qwen2.5-0.5B, CPU）+ App 的 OllamaClient 跑真实解释提示词 | healthCheck / listModels / chatStream 全通；流式输出正常 |
+
+沙箱 CPU 推理首字延迟约 12.5s（0.5B 模型、无 GPU），仅证明链路正确，**不代表性能**；Apple Silicon + 7B 的真实延迟以你机器实测为准（验收项 3 的 <3s 标准针对你的 Mac）。0.5B 模型的解释质量明显平庸（例子泛化、贴合度弱），与 PRD 中「手机端小模型仅作降级选项」的判断一致。
+
+剩余必须真机验证的项：macOS/Android 构建与运行（验收 1）、真实排版观感（验收 2 的人工部分）、M 系芯片 + 7B/14B 的延迟与解释质量（验收 3）、局域网链路（验收 4）。
+
+## 六、常见问题
 
 - `flutter pub get` 报版本冲突 → `flutter pub upgrade --major-versions` 后重试。
 - macOS 上点「AI 解释」转圈后报错 → 九成是忘了加 entitlements（见上文 ⚠️）。

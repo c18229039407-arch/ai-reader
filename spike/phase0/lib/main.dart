@@ -179,7 +179,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (_models.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: _model,
+                  initialValue: _model,
                   decoration: const InputDecoration(
                     labelText: '模型',
                     border: OutlineInputBorder(),

@@ -64,19 +64,18 @@ class _ExplainSheetState extends State<ExplainSheet> {
     _stopwatch.start();
     _sub = widget.client
         .chatStream(
-          model: widget.model,
-          system: _system,
-          user: widget.selectedText,
-        )
+      model: widget.model,
+      system: _system,
+      user: widget.selectedText,
+    )
         .listen(
-          (chunk) {
-            _firstTokenMs ??= _stopwatch.elapsedMilliseconds;
-            setState(() => _buffer.write(chunk));
-          },
-          onError: (e) => setState(() => _error = e),
-          onDone: () =>
-              setState(() => _totalMs = _stopwatch.elapsedMilliseconds),
-        );
+      (chunk) {
+        _firstTokenMs ??= _stopwatch.elapsedMilliseconds;
+        setState(() => _buffer.write(chunk));
+      },
+      onError: (e) => setState(() => _error = e),
+      onDone: () => setState(() => _totalMs = _stopwatch.elapsedMilliseconds),
+    );
   }
 
   @override
@@ -130,14 +129,14 @@ class _ExplainSheetState extends State<ExplainSheet> {
                         style: const TextStyle(color: Colors.red),
                       )
                     : _buffer.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : SelectableText(
-                        _buffer.toString(),
-                        style: const TextStyle(fontSize: 15, height: 1.6),
-                      ),
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        : SelectableText(
+                            _buffer.toString(),
+                            style: const TextStyle(fontSize: 15, height: 1.6),
+                          ),
               ),
             ),
           ],

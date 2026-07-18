@@ -58,17 +58,15 @@ class OllamaClient {
         throw Exception('Ollama HTTP ${res.statusCode}: $body');
       }
       // Ollama 流式响应：每行一个 JSON 对象
-      final lines = res.stream
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
+      final lines =
+          res.stream.transform(utf8.decoder).transform(const LineSplitter());
       await for (final line in lines) {
         if (line.trim().isEmpty) continue;
         final obj = jsonDecode(line) as Map<String, dynamic>;
         if (obj['error'] != null) {
           throw Exception('Ollama error: ${obj['error']}');
         }
-        final content =
-            ((obj['message'] as Map<String, dynamic>?)?['content']
+        final content = ((obj['message'] as Map<String, dynamic>?)?['content']
                 as String?) ??
             '';
         if (content.isNotEmpty) yield content;
