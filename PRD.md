@@ -369,6 +369,7 @@ Setting(llm_provider, api_key_ref, privacy_flags, sync_config)
 | AI 模型策略 | 默认本地 Ollama（Mac 本地/手机走局域网），API Key 可选替换 | 零成本起步；Apple Silicon 性能足够 |
 | 双端同步 | Syncthing | 无服务器、零成本、开源 |
 | 项目名 | 林间阅读（Linjian Reader） | 2026-07-18 定名 |
+| 开源许可证 | GPL-3.0 | 衍生品须开源，威慑盗版化分叉 |
 | 部署形态 | 无自建服务器，纯本地 + GitHub 开源分发 | 作者无服务器 |
 | 翻译需求 | 新增 G 组功能（选段翻译/批量翻译/对照） | 作者读英文书需中译 |
 
@@ -376,7 +377,7 @@ Setting(llm_provider, api_key_ref, privacy_flags, sync_config)
 
 1. **个性化画像粒度**：用户画像做到多细？（仅职业/兴趣，还是允许自由文本描述生活场景？建议 MVP 用「职业 + 兴趣标签 + 一段自由描述」三件套。）
 2. **批量翻译的默认模型**：Ollama 下选哪个模型做翻译默认（候选：Qwen2.5 系列对中文最友好），Phase 0 实测后定。
-3. **开源许可证**：GPL 系（衍生必须开源）还是 MIT/Apache（宽松）？影响社区形态，发布前定即可。
+3. ~~开源许可证~~：已定 GPL-3.0（2026-07-18）。
 
 ---
 

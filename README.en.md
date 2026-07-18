@@ -3,7 +3,7 @@
 [![CI](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Android-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.35%2B-02569B?logo=flutter)
-![License](https://img.shields.io/badge/license-TBD-lightgrey)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue)](./LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](./CONTRIBUTING.md)
 
 English | **[简体中文](./README.md)**
@@ -58,7 +58,7 @@ E2E=1 flutter test test/e2e/phase2_e2e_test.dart   # end-to-end (network + Ollam
 
 ## License
 
-**TBD** (will be settled before the first release; see [docs/license-guide.md](./docs/license-guide.md)). Until a LICENSE file lands, all rights reserved — open an issue if you want to reuse the code.
+[GPL-3.0](./LICENSE). Anyone distributing derivatives must open-source their modifications — a structural deterrent against piracy-bundled forks (rationale in [docs/license-guide.md](./docs/license-guide.md)).
 
 ## Contributing
 
