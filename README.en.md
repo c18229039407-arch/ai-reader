@@ -1,4 +1,4 @@
-# AI Reader (working title)
+# 林间阅读 (Linjian Reader)
 
 [![CI](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Android-blue)
@@ -15,7 +15,7 @@ English | **[简体中文](./README.md)**
 
 ## What it is
 
-Most readers solve "rendering text". The real obstacle is usually **comprehension** — an unfamiliar term or a dense argument makes people give up. AI Reader's claim: *a reader should help you across the gap the second you get stuck*, and personally — the same concept deserves a different analogy for a programmer than for a chef.
+Most readers solve "rendering text". The real obstacle is usually **comprehension** — an unfamiliar term or a dense argument makes people give up. Linjian Reader's claim: *a reader should help you across the gap the second you get stuck*, and personally — the same concept deserves a different analogy for a programmer than for a chef.
 
 ### Highlights
 

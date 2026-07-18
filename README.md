@@ -1,4 +1,4 @@
-# AI Reader（暂定名）
+# 林间阅读
 
 [![CI](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Android-blue)
@@ -19,7 +19,7 @@
 
 ## 这是什么
 
-大多数阅读器解决的是「把字显示出来」，而真正的阅读障碍常发生在**理解层**——一个陌生术语、一段绕的论证，会让人卡住甚至弃读。AI Reader 的主张是：**阅读器不该只翻页，还该在你卡住的那一秒帮你跨过去**，而且这个「帮」是个性化的——同一个概念，对程序员和对厨师，应该给不同的类比。
+大多数阅读器解决的是「把字显示出来」，而真正的阅读障碍常发生在**理解层**——一个陌生术语、一段绕的论证，会让人卡住甚至弃读。林间阅读的主张是：**阅读器不该只翻页，还该在你卡住的那一秒帮你跨过去**，而且这个「帮」是个性化的——同一个概念，对程序员和对厨师，应该给不同的类比。
 
 ### 核心特性
 

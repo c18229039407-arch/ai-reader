@@ -35,7 +35,7 @@ class AIReaderApp extends StatelessWidget {
           _ => ThemeMode.system,
         };
         return MaterialApp(
-          title: 'AI Reader',
+          title: '林间阅读',
           debugShowCheckedModeBanner: false,
           themeMode: mode,
           theme: ThemeData(

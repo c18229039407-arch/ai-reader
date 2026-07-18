@@ -1,4 +1,4 @@
-# AI 看书 App —— 产品需求文档（PRD）
+# 林间阅读 —— 产品需求文档（PRD）
 
 > 文档版本：v0.2
 > 更新日期：2026-07-18
@@ -368,6 +368,7 @@ Setting(llm_provider, api_key_ref, privacy_flags, sync_config)
 | 首发端 | macOS 先行，Android 于 Phase 2 | 桌面端开发调试效率高，本地 Ollama 就在 Mac 上 |
 | AI 模型策略 | 默认本地 Ollama（Mac 本地/手机走局域网），API Key 可选替换 | 零成本起步；Apple Silicon 性能足够 |
 | 双端同步 | Syncthing | 无服务器、零成本、开源 |
+| 项目名 | 林间阅读（Linjian Reader） | 2026-07-18 定名 |
 | 部署形态 | 无自建服务器，纯本地 + GitHub 开源分发 | 作者无服务器 |
 | 翻译需求 | 新增 G 组功能（选段翻译/批量翻译/对照） | 作者读英文书需中译 |
 
