@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'epub_loader.dart';
 import 'explain_service.dart';
-import 'ollama_client.dart';
+import 'llm_client.dart';
 import 'translation_store.dart';
 
 enum BatchStatus { idle, running, paused, completed, error }
@@ -20,7 +20,7 @@ class BatchTranslator {
     required this.book,
   });
 
-  final OllamaClient client;
+  final LlmClient client;
   final String model;
   final TranslationStore store;
   final String bookId;

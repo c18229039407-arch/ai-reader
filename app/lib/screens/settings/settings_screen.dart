@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
 import '../../services/library_store.dart';
+import '../../services/llm_client.dart';
 import '../../services/ollama_client.dart';
 import '../../services/settings_store.dart';
 
@@ -157,23 +158,104 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (v) => setState(() => s.aiEnabled = v),
               ),
               if (s.aiEnabled) ...[
-                TextField(
-                  controller: _url,
-                  decoration: const InputDecoration(
-                    labelText: 'Ollama 地址',
-                    helperText: 'Mac 本机默认 http://127.0.0.1:11434',
-                    border: OutlineInputBorder(),
-                  ),
-                  onSubmitted: (_) => _check(),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                        value: 'ollama',
+                        icon: Icon(Icons.computer, size: 16),
+                        label: Text('本地 Ollama（免费）')),
+                    ButtonSegment(
+                        value: 'openai',
+                        icon: Icon(Icons.cloud_outlined, size: 16),
+                        label: Text('云端 API（快，按量计费）')),
+                  ],
+                  selected: {s.providerType},
+                  onSelectionChanged: (sel) =>
+                      setState(() => s.providerType = sel.first),
                 ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Icon(Icons.circle, size: 12, color: statusColor),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(statusText)),
-                  TextButton(onPressed: _check, child: const Text('重新检测')),
-                ]),
-                if (_models.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                if (s.providerType == 'openai') ...[
+                  TextField(
+                    controller: TextEditingController(text: s.openaiBaseUrl),
+                    decoration: const InputDecoration(
+                      labelText: '服务地址（OpenAI 兼容）',
+                      helperText:
+                          'DeepSeek: https://api.deepseek.com ｜ OpenAI: https://api.openai.com/v1',
+                      helperMaxLines: 2,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => s.openaiBaseUrl = v,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: TextEditingController(text: s.openaiApiKey),
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'API Key',
+                      helperText:
+                          '到服务商官网注册获取（DeepSeek 一次解释约几厘钱）。Alpha 版密钥明文存本机，正式版迁移系统钥匙串。',
+                      helperMaxLines: 3,
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => s.openaiApiKey = v,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: TextEditingController(text: s.openaiModel),
+                    decoration: const InputDecoration(
+                      labelText: '模型名',
+                      helperText: 'DeepSeek 填 deepseek-chat',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => s.openaiModel = v,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.wifi_tethering, size: 16),
+                      label: const Text('测试连接'),
+                      onPressed: () async {
+                        final ok = await OpenAiCompatClient(
+                                baseUrl: s.openaiBaseUrl,
+                                apiKey: s.openaiApiKey)
+                            .healthCheck();
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(ok
+                                ? '✓ 云端连接正常'
+                                : '连接失败：检查地址与 API Key（部分服务商不支持连接测试，可直接试用 AI 解释）')));
+                      },
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    '提示：使用云端时，你划选的文字及前后几段会发送到所选服务商的服务器。介意的内容请切回本地 Ollama。',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(height: 1.5),
+                  ),
+                ],
+                if (s.providerType == 'ollama')
+                  TextField(
+                    controller: _url,
+                    decoration: const InputDecoration(
+                      labelText: 'Ollama 地址',
+                      helperText: 'Mac 本机默认 http://127.0.0.1:11434',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _check(),
+                  ),
+                if (s.providerType == 'ollama') ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(Icons.circle, size: 12, color: statusColor),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(statusText)),
+                    TextButton(onPressed: _check, child: const Text('重新检测')),
+                  ]),
+                ],
+                if (s.providerType == 'ollama' && _models.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     initialValue: _models.contains(s.model) ? s.model : null,
                     decoration: const InputDecoration(

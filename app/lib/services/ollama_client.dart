@@ -3,13 +3,16 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'llm_client.dart';
+
 /// Ollama 客户端：健康检查、模型列表、流式对话（支持多轮消息）。
-class OllamaClient {
+class OllamaClient implements LlmClient {
   OllamaClient(this.baseUrl);
 
   /// 形如 http://127.0.0.1:11434 或 http://192.168.x.x:11434
   final String baseUrl;
 
+  @override
   Future<bool> healthCheck({
     Duration timeout = const Duration(seconds: 2),
   }) async {
@@ -21,6 +24,7 @@ class OllamaClient {
     }
   }
 
+  @override
   Future<List<String>> listModels() async {
     final res = await http
         .get(Uri.parse('$baseUrl/api/tags'))
@@ -45,6 +49,7 @@ class OllamaClient {
       ]);
 
   /// 多轮消息流式接口（D5 追问的基础）。
+  @override
   Stream<String> chatStreamMessages({
     required String model,
     required List<Map<String, String>> messages,

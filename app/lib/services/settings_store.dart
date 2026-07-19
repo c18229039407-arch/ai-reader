@@ -53,6 +53,35 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- 云端 API Provider（F1b 第二档）----------
+  /// 'ollama'（本地，默认） | 'openai'（OpenAI 兼容云端：DeepSeek 等）
+  String get providerType => _prefs.getString('provider_type') ?? 'ollama';
+  set providerType(String v) {
+    _prefs.setString('provider_type', v);
+    notifyListeners();
+  }
+
+  String get openaiBaseUrl =>
+      _prefs.getString('openai_base_url') ?? 'https://api.deepseek.com';
+  set openaiBaseUrl(String v) {
+    _prefs.setString('openai_base_url', v.trim());
+    notifyListeners();
+  }
+
+  String get openaiModel => _prefs.getString('openai_model') ?? 'deepseek-chat';
+  set openaiModel(String v) {
+    _prefs.setString('openai_model', v.trim());
+    notifyListeners();
+  }
+
+  /// ⚠️ Alpha 版偏差：密钥暂存本地偏好文件（明文）。未签名分发的 App 使用系统
+  /// 钥匙串存在权限问题，正式签名版将迁移至 Keychain/Keystore（PRD F1）。
+  String get openaiApiKey => _prefs.getString('openai_api_key') ?? '';
+  set openaiApiKey(String v) {
+    _prefs.setString('openai_api_key', v.trim());
+    notifyListeners();
+  }
+
   // ---------- 自定义数据源（A5，实验性）----------
   /// 每行一个 Gutendex 兼容源的 baseUrl；添加何种源属用户自身行为。
   List<String> get customSourceUrls =>

@@ -7,6 +7,7 @@ import '../../services/batch_translator.dart';
 import '../../services/epub_loader.dart';
 import '../../services/explain_service.dart';
 import '../../services/library_store.dart';
+import '../../services/llm_client.dart';
 import '../../services/ollama_client.dart';
 import '../../services/settings_store.dart';
 import '../../services/translation_store.dart';
@@ -180,11 +181,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
   // ---------- AI ----------
 
   ExplainService? _service() {
-    if (!widget.settings.aiEnabled) return null;
-    final model = widget.settings.model;
-    if (model.isEmpty) return null;
-    return ExplainService(
-        client: OllamaClient(widget.settings.ollamaUrl), model: model);
+    final s = widget.settings;
+    if (!s.aiEnabled) return null;
+    if (s.providerType == 'openai') {
+      if (s.openaiApiKey.isEmpty || s.openaiModel.isEmpty) return null;
+      return ExplainService(
+        client: OpenAiCompatClient(
+            baseUrl: s.openaiBaseUrl, apiKey: s.openaiApiKey),
+        model: s.openaiModel,
+      );
+    }
+    if (s.model.isEmpty) return null;
+    return ExplainService(client: OllamaClient(s.ollamaUrl), model: s.model);
   }
 
   void _runAi({required bool translate}) {
@@ -409,9 +417,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
     if (go != true) return;
 
+    final svcForBatch = _service()!;
     _batch = BatchTranslator(
-      client: OllamaClient(widget.settings.ollamaUrl),
-      model: widget.settings.model,
+      client: svcForBatch.client,
+      model: svcForBatch.model,
       store: _tStore,
       bookId: widget.book.id,
       book: content,

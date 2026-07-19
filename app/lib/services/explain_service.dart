@@ -1,12 +1,12 @@
 import '../models/models.dart';
 import 'epub_loader.dart';
-import 'ollama_client.dart';
+import 'llm_client.dart';
 
 /// 解释编排器：组装 选段 + 前后文 + 书籍元信息 + 用户画像。
 class ExplainService {
   ExplainService({required this.client, required this.model});
 
-  final OllamaClient client;
+  final LlmClient client;
   final String model;
 
   static const contextParagraphs = 2; // 前后各取 N 段（D3）
@@ -89,7 +89,7 @@ class ExplainSession {
           {'role': 'user', 'content': firstUser},
         ];
 
-  final OllamaClient client;
+  final LlmClient client;
   final String model;
   final List<Map<String, String>> _messages;
 
