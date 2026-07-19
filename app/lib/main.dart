@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:animations/animations.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -12,6 +15,25 @@ import 'services/settings_store.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 桌面端：像样的默认窗口尺寸与最小尺寸（书页比例）
+  final isDesktop = !kIsWeb &&
+      (Platform.isMacOS || Platform.isWindows || Platform.isLinux) &&
+      Platform.environment['FLUTTER_TEST'] != 'true';
+  if (isDesktop) {
+    await windowManager.ensureInitialized();
+    const options = WindowOptions(
+      size: Size(1180, 800),
+      minimumSize: Size(880, 620),
+      center: true,
+      title: '林间阅读',
+    );
+    unawaited(windowManager.waitUntilReadyToShow(options, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    }));
+  }
+
   final settings = await SettingsStore.load();
   final support = await getApplicationSupportDirectory();
   final store = LibraryStore(Directory(p.join(support.path, 'AIReader')),

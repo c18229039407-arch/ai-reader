@@ -400,41 +400,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final serif = ['Songti SC', 'STSong', 'Noto Serif SC', 'serif'];
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('书架'),
-        actions: [
-          IconButton(
-            tooltip: '公版书搜索',
-            icon: const Icon(Icons.travel_explore_outlined),
-            onPressed: () async {
-              // A5：内置合法源 + 用户自定义 Gutendex 兼容源
-              final sources = <BookSource>[
-                ...defaultSources,
-                ...widget.settings.customSourceUrls.asMap().entries.map(
-                      (e) => GutendexSource(
-                        baseUrl: e.value.trim(),
-                        id: 'custom-${e.key}',
-                        displayName: Uri.tryParse(e.value)?.host ?? e.value,
-                        licenseNote: '用户自定义源，内容合规责任由配置者自负',
-                      ),
-                    ),
-              ];
-              await Navigator.of(context).push(MaterialPageRoute(
-                  builder: (_) =>
-                      SearchScreen(store: widget.store, sources: sources)));
-              _refresh();
-            },
-          ),
-          IconButton(
-            tooltip: '设置',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => SettingsScreen(
-                    settings: widget.settings, store: widget.store))),
-          ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _importing ? null : _import,
         icon: _importing
@@ -445,69 +412,148 @@ class _ShelfScreenState extends State<ShelfScreen> {
             : const Icon(Icons.add),
         label: Text(_importing ? _importLabel : '导入书籍'),
       ),
-      body: _books.isEmpty
-          ? _empty(context)
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                  child: Row(
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1120),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32, 24, 32, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Expanded(
-                        child: TextField(
-                          decoration: const InputDecoration(
-                            hintText: '搜索书名 / 作者…',
-                            prefixIcon: Icon(Icons.search, size: 20),
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (v) => setState(() => _filter = v),
+                      Text('书架',
+                          style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w700,
+                              fontFamilyFallback: serif)),
+                      const SizedBox(width: 12),
+                      if (_books.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text('${_books.length} 本',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color:
+                                      Theme.of(context).colorScheme.outline)),
                         ),
+                      const Spacer(),
+                      if (_books.isNotEmpty) ...[
+                        SizedBox(
+                          width: 240,
+                          height: 40,
+                          child: TextField(
+                            decoration: InputDecoration(
+                              hintText: '搜索书名 / 作者',
+                              hintStyle: const TextStyle(fontSize: 13),
+                              prefixIcon: const Icon(Icons.search, size: 18),
+                              isDense: true,
+                              filled: true,
+                              fillColor: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest
+                                  .withValues(alpha: .5),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(20),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: EdgeInsets.zero,
+                            ),
+                            onChanged: (v) => setState(() => _filter = v),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        PopupMenuButton<String>(
+                          tooltip: '排序',
+                          icon: const Icon(Icons.sort, size: 20),
+                          initialValue: _sort,
+                          onSelected: (v) => setState(() => _sort = v),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'added', child: Text('最近添加')),
+                            PopupMenuItem(value: 'recent', child: Text('最近阅读')),
+                            PopupMenuItem(value: 'title', child: Text('书名')),
+                            PopupMenuItem(value: 'progress', child: Text('进度')),
+                          ],
+                        ),
+                      ],
+                      IconButton(
+                        tooltip: '公版书搜索',
+                        icon:
+                            const Icon(Icons.travel_explore_outlined, size: 20),
+                        onPressed: () async {
+                          // A5：内置合法源 + 用户自定义 Gutendex 兼容源
+                          final sources = <BookSource>[
+                            ...defaultSources,
+                            ...widget.settings.customSourceUrls
+                                .asMap()
+                                .entries
+                                .map(
+                                  (e) => GutendexSource(
+                                    baseUrl: e.value.trim(),
+                                    id: 'custom-${e.key}',
+                                    displayName:
+                                        Uri.tryParse(e.value)?.host ?? e.value,
+                                    licenseNote: '用户自定义源，内容合规责任由配置者自负',
+                                  ),
+                                ),
+                          ];
+                          await Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => SearchScreen(
+                                  store: widget.store, sources: sources)));
+                          _refresh();
+                        },
                       ),
-                      const SizedBox(width: 8),
-                      PopupMenuButton<String>(
-                        tooltip: '排序',
-                        icon: const Icon(Icons.sort),
-                        initialValue: _sort,
-                        onSelected: (v) => setState(() => _sort = v),
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'added', child: Text('最近添加')),
-                          PopupMenuItem(value: 'recent', child: Text('最近阅读')),
-                          PopupMenuItem(value: 'title', child: Text('书名')),
-                          PopupMenuItem(value: 'progress', child: Text('进度')),
-                        ],
+                      IconButton(
+                        tooltip: '设置',
+                        icon: const Icon(Icons.settings_outlined, size: 20),
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => SettingsScreen(
+                                    settings: widget.settings,
+                                    store: widget.store))),
                       ),
                     ],
                   ),
-                ),
-                if (_allTags.isNotEmpty)
-                  SizedBox(
-                    height: 44,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 6),
-                      children: [
-                        FilterChip(
-                          label: const Text('全部'),
-                          selected: _tagFilter == null,
-                          onSelected: (_) => setState(() => _tagFilter = null),
+                  if (_allTags.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: SizedBox(
+                        height: 36,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          children: [
+                            FilterChip(
+                              label: const Text('全部'),
+                              visualDensity: VisualDensity.compact,
+                              selected: _tagFilter == null,
+                              onSelected: (_) =>
+                                  setState(() => _tagFilter = null),
+                            ),
+                            ..._allTags.map((t) => Padding(
+                                  padding: const EdgeInsets.only(left: 8),
+                                  child: FilterChip(
+                                    label: Text(t),
+                                    visualDensity: VisualDensity.compact,
+                                    selected: _tagFilter == t,
+                                    onSelected: (_) => setState(() =>
+                                        _tagFilter =
+                                            _tagFilter == t ? null : t),
+                                  ),
+                                )),
+                          ],
                         ),
-                        ..._allTags.map((t) => Padding(
-                              padding: const EdgeInsets.only(left: 8),
-                              child: FilterChip(
-                                label: Text(t),
-                                selected: _tagFilter == t,
-                                onSelected: (_) => setState(() =>
-                                    _tagFilter = _tagFilter == t ? null : t),
-                              ),
-                            )),
-                      ],
+                      ),
                     ),
-                  ),
-                Expanded(child: _grid(context)),
-              ],
+                  const SizedBox(height: 14),
+                  Expanded(
+                      child: _books.isEmpty ? _empty(context) : _grid(context)),
+                ],
+              ),
             ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -530,14 +576,13 @@ class _ShelfScreenState extends State<ShelfScreen> {
 
   Widget _grid(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
-      final cross = (constraints.maxWidth / 180).floor().clamp(2, 8);
       return GridView.builder(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 90),
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: cross,
-          childAspectRatio: 0.68,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
+        padding: const EdgeInsets.fromLTRB(2, 8, 2, 96),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 168,
+          childAspectRatio: 0.62,
+          crossAxisSpacing: 22,
+          mainAxisSpacing: 26,
         ),
         itemCount: _visibleBooks.length,
         itemBuilder: (_, i) {
@@ -545,7 +590,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
           final pct = _progress[b.id] ?? 0;
           final palette =
               _coverPalettes[b.title.hashCode.abs() % _coverPalettes.length];
-          return InkWell(
+          return _Hoverable(
+              child: InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () => _open(b),
             onLongPress: () => _bookMenu(b),
@@ -652,9 +698,37 @@ class _ShelfScreenState extends State<ShelfScreen> {
                 ),
               ],
             ),
-          );
+          ));
         },
       );
     });
+  }
+}
+
+/// 桌面端悬停缩放（L2 动效）。
+class _Hoverable extends StatefulWidget {
+  const _Hoverable({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_Hoverable> createState() => _HoverableState();
+}
+
+class _HoverableState extends State<_Hoverable> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: AnimatedScale(
+        scale: _hover ? 1.045 : 1.0,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
   }
 }
