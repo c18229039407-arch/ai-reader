@@ -14,6 +14,7 @@ import '../../services/translation_store.dart';
 import 'annotations_screen.dart';
 import 'concepts_screen.dart';
 import 'explain_panel.dart';
+import 'reader_papers.dart';
 import 'search_in_book_screen.dart';
 
 /// 高亮色板（C5）。
@@ -485,13 +486,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   // ---------- 构建 ----------
 
-  Color? _readerBackground(BuildContext context) {
-    if (widget.settings.readerTheme == 3 &&
-        Theme.of(context).brightness == Brightness.light) {
-      return const Color(0xFFF5ECD9);
-    }
-    return null;
-  }
+  ReaderPaper get _paper => readerPapers[
+      widget.settings.readerTheme.clamp(0, readerPapers.length - 1)];
+
+  Color? _readerBackground(BuildContext context) => _paper.bg;
 
   @override
   Widget build(BuildContext context) {
@@ -859,17 +857,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
       'Source Han Serif SC',
       'serif',
     ];
+    final paperFg = _paper.fg;
     final baseStyle = TextStyle(
       fontSize: s.fontSize,
       height: s.lineHeight,
       fontFamilyFallback: serifFallback,
       letterSpacing: 0.2,
+      color: paperFg,
     );
     final dimStyle = TextStyle(
       fontSize: s.fontSize - 1,
       height: s.lineHeight,
       fontFamilyFallback: serifFallback,
-      color: Theme.of(context).colorScheme.outline,
+      color: paperFg?.withValues(alpha: .55) ??
+          Theme.of(context).colorScheme.outline,
     );
 
     Widget body;
@@ -1023,23 +1024,66 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ),
                 ]),
                 const SizedBox(height: 8),
-                Row(children: [
-                  const SizedBox(width: 72, child: Text('主题')),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('跟随系统')),
-                      ButtonSegment(value: 1, label: Text('日间')),
-                      ButtonSegment(value: 2, label: Text('夜间')),
-                      ButtonSegment(value: 3, label: Text('纸质')),
-                    ],
-                    selected: {s.readerTheme},
-                    onSelectionChanged: (sel) {
-                      s.readerTheme = sel.first;
-                      setSheet(() {});
-                      setState(() {});
-                    },
-                  ),
-                ]),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(
+                        width: 72,
+                        child: Padding(
+                            padding: EdgeInsets.only(top: 10),
+                            child: Text('纸张'))),
+                    Expanded(
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          for (var i = 0; i < readerPapers.length; i++)
+                            InkWell(
+                              borderRadius: BorderRadius.circular(20),
+                              onTap: () {
+                                s.readerTheme = i;
+                                setSheet(() {});
+                                setState(() {});
+                              },
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: readerPapers[i].bg ??
+                                          Theme.of(ctx)
+                                              .colorScheme
+                                              .surfaceContainerHighest,
+                                      border: Border.all(
+                                        width: s.readerTheme == i ? 3 : 1,
+                                        color: s.readerTheme == i
+                                            ? Theme.of(ctx).colorScheme.primary
+                                            : Theme.of(ctx).dividerColor,
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text('文',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: readerPapers[i].fg ??
+                                                Theme.of(ctx)
+                                                    .colorScheme
+                                                    .onSurface)),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(readerPapers[i].name,
+                                      style: const TextStyle(fontSize: 10)),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

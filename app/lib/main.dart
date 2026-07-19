@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'screens/reader/reader_papers.dart';
 import 'screens/shelf/shelf_screen.dart';
 import 'services/library_store.dart';
 import 'services/settings_store.dart';
@@ -30,11 +31,12 @@ class AIReaderApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: settings,
       builder: (context, _) {
-        final mode = switch (settings.readerTheme) {
-          1 => ThemeMode.light,
-          2 => ThemeMode.dark,
-          _ => ThemeMode.system,
-        };
+        final paperIdx = settings.readerTheme.clamp(0, readerPapers.length - 1);
+        final mode = paperIdx == 0
+            ? ThemeMode.system
+            : (readerPapers[paperIdx].isDark
+                ? ThemeMode.dark
+                : ThemeMode.light);
         // 「林间」森林绿主题
         const seed = Color(0xFF2E6B4F);
         ThemeData themed(Brightness b) {

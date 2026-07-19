@@ -53,6 +53,13 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// AI 首次自动配置是否已完成（自动扫描本地模型 / 引导填 Key）。
+  bool get aiSetupDone => _prefs.getBool('ai_setup_done') ?? false;
+  set aiSetupDone(bool v) {
+    _prefs.setBool('ai_setup_done', v);
+    notifyListeners();
+  }
+
   // ---------- 云端 API Provider（F1b 第二档）----------
   /// 'ollama'（本地，默认） | 'openai'（OpenAI 兼容云端：DeepSeek 等）
   String get providerType => _prefs.getString('provider_type') ?? 'ollama';
@@ -109,13 +116,13 @@ class SettingsStore extends ChangeNotifier {
   }
 
   // ---------- 排版与主题（C2/C3）----------
-  double get fontSize => _prefs.getDouble('font_size') ?? 17;
+  double get fontSize => _prefs.getDouble('font_size') ?? 18;
   set fontSize(double v) {
     _prefs.setDouble('font_size', v);
     notifyListeners();
   }
 
-  double get lineHeight => _prefs.getDouble('line_height') ?? 1.9;
+  double get lineHeight => _prefs.getDouble('line_height') ?? 2.0;
   set lineHeight(double v) {
     _prefs.setDouble('line_height', v);
     notifyListeners();
@@ -127,7 +134,7 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 阅读主题：0 跟随系统 / 1 日间 / 2 夜间 / 3 护眼纸质
+  /// 阅读纸张：索引对应 reader_papers.dart 的 readerPapers（0 = 跟随系统）
   int get readerTheme => _prefs.getInt('reader_theme') ?? 0;
   set readerTheme(int v) {
     _prefs.setInt('reader_theme', v);

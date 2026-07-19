@@ -8,6 +8,8 @@ import '../../models/models.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
 import '../../services/book_source.dart';
+import '../../services/llm_client.dart';
+import '../../services/ollama_client.dart';
 import '../reader/pdf_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../search/search_screen.dart';
@@ -50,7 +52,118 @@ class _ShelfScreenState extends State<ShelfScreen> {
   void initState() {
     super.initState();
     _refresh();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowPrivacy());
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _maybeShowPrivacy();
+      await _autoSetupAi();
+    });
+  }
+
+  /// 零配置 AI：首次启动自动扫描本机模型服务（Ollama → LM Studio），
+  /// 找到即自动接入；都没有才引导填云端 API Key。
+  Future<void> _autoSetupAi() async {
+    final s = widget.settings;
+    if (s.aiSetupDone || !s.aiEnabled) return;
+    if (Platform.environment['FLUTTER_TEST'] == 'true') return; // 测试环境跳过
+
+    // 1) Ollama（默认端口 11434）
+    final ollama = OllamaClient('http://127.0.0.1:11434');
+    if (await ollama.healthCheck()) {
+      final models = await ollama.listModels();
+      if (models.isNotEmpty) {
+        // 优先小模型（对低内存机型友好），否则取第一个
+        final preferred = models.firstWhere(
+          (m) => m.contains('3b') || m.contains('1.5b') || m.contains('4b'),
+          orElse: () => models.first,
+        );
+        s
+          ..providerType = 'ollama'
+          ..ollamaUrl = 'http://127.0.0.1:11434'
+          ..model = preferred
+          ..aiSetupDone = true;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('✓ 已自动连接本机 Ollama（模型 $preferred），AI 功能开箱即用')));
+        }
+        return;
+      }
+    }
+
+    // 2) LM Studio（默认端口 1234，OpenAI 兼容，无需 Key）
+    final lmStudio = OpenAiCompatClient(
+        baseUrl: 'http://127.0.0.1:1234/v1', apiKey: 'lm-studio');
+    if (await lmStudio.healthCheck()) {
+      final models = await lmStudio.listModels();
+      if (models.isNotEmpty) {
+        s
+          ..providerType = 'openai'
+          ..openaiBaseUrl = 'http://127.0.0.1:1234/v1'
+          ..openaiApiKey = 'lm-studio'
+          ..openaiModel = models.first
+          ..aiSetupDone = true;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('✓ 已自动连接本机 LM Studio（模型 ${models.first}）')));
+        }
+        return;
+      }
+    }
+
+    // 3) 没有本地模型 → 引导云端 Key
+    if (!mounted) return;
+    final keyController = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('配置 AI（一次即可）'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '没有检测到本机模型服务（Ollama / LM Studio）。\n\n'
+              '可以填一个云端 API Key 直接使用（推荐 DeepSeek，'
+              '注册于 platform.deepseek.com，一次解释约几厘钱）；'
+              '也可以稍后在设置中配置。',
+              style: TextStyle(height: 1.6, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: keyController,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'DeepSeek API Key（sk-…）',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              widget.settings.aiSetupDone = true;
+              Navigator.pop(ctx);
+            },
+            child: const Text('稍后再说'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final key = keyController.text.trim();
+              if (key.isNotEmpty) {
+                widget.settings
+                  ..providerType = 'openai'
+                  ..openaiBaseUrl = 'https://api.deepseek.com'
+                  ..openaiModel = 'deepseek-chat'
+                  ..openaiApiKey = key;
+              }
+              widget.settings.aiSetupDone = true;
+              Navigator.pop(ctx);
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _refresh() async {
