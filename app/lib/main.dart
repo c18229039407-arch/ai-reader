@@ -34,20 +34,41 @@ class AIReaderApp extends StatelessWidget {
           2 => ThemeMode.dark,
           _ => ThemeMode.system,
         };
+        // 「林间」森林绿主题
+        const seed = Color(0xFF2E6B4F);
+        ThemeData themed(Brightness b) {
+          final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: b);
+          return ThemeData(
+            colorScheme: scheme,
+            useMaterial3: true,
+            scaffoldBackgroundColor: b == Brightness.light
+                ? const Color(0xFFF7F6F2) // 暖白纸感
+                : null,
+            appBarTheme: AppBarTheme(
+              backgroundColor:
+                  b == Brightness.light ? const Color(0xFFF7F6F2) : null,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              centerTitle: false,
+              titleTextStyle: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: scheme.onSurface,
+              ),
+            ),
+            snackBarTheme:
+                const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+            cardTheme: const CardThemeData(
+                elevation: 0, surfaceTintColor: Colors.transparent),
+          );
+        }
+
         return MaterialApp(
           title: '林间阅读',
           debugShowCheckedModeBanner: false,
           themeMode: mode,
-          theme: ThemeData(
-            colorSchemeSeed: const Color(0xFF4F5BD5),
-            useMaterial3: true,
-            brightness: Brightness.light,
-          ),
-          darkTheme: ThemeData(
-            colorSchemeSeed: const Color(0xFF4F5BD5),
-            useMaterial3: true,
-            brightness: Brightness.dark,
-          ),
+          theme: themed(Brightness.light),
+          darkTheme: themed(Brightness.dark),
           home: ShelfScreen(settings: settings, store: store),
         );
       },

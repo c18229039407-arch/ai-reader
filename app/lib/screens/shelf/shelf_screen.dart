@@ -1,3 +1,6 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
@@ -9,6 +12,17 @@ import '../reader/pdf_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
+
+/// 书架封面色板（按书名散列取用，森林/自然系）。
+const _coverPalettes = [
+  [0xFF2E6B4F, 0xFF5D9B7C], // 松绿
+  [0xFF7A5C3E, 0xFFB08D5F], // 枯木棕
+  [0xFF3E5C76, 0xFF748CAB], // 山雾蓝
+  [0xFF6B4A2E, 0xFF9B7C5D], // 陶土
+  [0xFF4A2E6B, 0xFF7C5D9B], // 暮紫
+  [0xFF2E5C6B, 0xFF5D8C9B], // 湖青
+  [0xFF6B2E3E, 0xFF9B5D6C], // 果酱红
+];
 
 /// 书架（B1/B2）+ 导入（A1）+ 首次隐私说明（F3）。
 class ShelfScreen extends StatefulWidget {
@@ -114,34 +128,46 @@ class _ShelfScreenState extends State<ShelfScreen> {
     );
   }
 
+  String _importLabel = '导入书籍';
+
   Future<void> _import() async {
+    // withData: false + 按路径读取 —— 避免大文件经平台通道整体拷贝导致的卡顿
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['epub', 'txt', 'pdf'],
       allowMultiple: true,
-      withData: true,
+      withData: false,
     );
-    if (result == null) return;
+    if (result == null || result.files.isEmpty) return;
     setState(() => _importing = true);
     var ok = 0, fail = 0;
-    for (final f in result.files) {
-      final bytes = f.bytes;
-      if (bytes == null) {
-        fail++;
-        continue;
-      }
+    String? lastError;
+    final total = result.files.length;
+    for (var i = 0; i < total; i++) {
+      final f = result.files[i];
+      setState(() => _importLabel = '导入中 ${i + 1}/$total…');
       try {
+        Uint8List? bytes = f.bytes;
+        if (bytes == null && f.path != null) {
+          bytes = await File(f.path!).readAsBytes();
+        }
+        if (bytes == null) throw Exception('无法读取文件');
         await widget.store.importBytes(bytes, f.name);
         ok++;
-      } catch (_) {
+      } catch (e) {
         fail++;
+        lastError = '$e';
       }
     }
-    setState(() => _importing = false);
+    setState(() {
+      _importing = false;
+      _importLabel = '导入书籍';
+    });
     await _refresh();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('导入完成：成功 $ok 本${fail > 0 ? '，失败 $fail 本' : ''}')));
+          content: Text('导入完成：成功 $ok 本'
+              '${fail > 0 ? '，失败 $fail 本（$lastError）' : ''}')));
     }
   }
 
@@ -304,7 +330,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                 height: 18,
                 child: CircularProgressIndicator(strokeWidth: 2))
             : const Icon(Icons.add),
-        label: Text(_importing ? '导入中…' : '导入书籍'),
+        label: Text(_importing ? _importLabel : '导入书籍'),
       ),
       body: _books.isEmpty
           ? _empty(context)
@@ -376,7 +402,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.auto_stories_outlined,
+            Icon(Icons.forest_outlined,
                 size: 72, color: Theme.of(context).colorScheme.outline),
             const SizedBox(height: 16),
             const Text('书架还是空的'),
@@ -404,8 +430,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
         itemBuilder: (_, i) {
           final b = _visibleBooks[i];
           final pct = _progress[b.id] ?? 0;
+          final palette =
+              _coverPalettes[b.title.hashCode.abs() % _coverPalettes.length];
           return InkWell(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             onTap: () => _open(b),
             onLongPress: () => _bookMenu(b),
             child: Column(
@@ -415,58 +443,100 @@ class _ShelfScreenState extends State<ShelfScreen> {
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
+                      borderRadius: BorderRadius.circular(12),
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [
-                          Theme.of(context).colorScheme.primaryContainer,
-                          Theme.of(context).colorScheme.secondaryContainer,
-                        ],
+                        colors: [Color(palette[0]), Color(palette[1])],
                       ),
-                    ),
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          b.title,
-                          maxLines: 4,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(palette[0]).withValues(alpha: .35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
                         ),
-                        const Spacer(),
-                        Text(b.author,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                fontSize: 11,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                    .withValues(alpha: .7))),
-                        Text(b.format.toUpperCase(),
-                            style: TextStyle(
-                                fontSize: 10,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer
-                                    .withValues(alpha: .5))),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        // 书脊装饰线
+                        Positioned(
+                          left: 10,
+                          top: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 1.5,
+                            color: Colors.white.withValues(alpha: .28),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(22, 16, 14, 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                b.title,
+                                maxLines: 4,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  height: 1.4,
+                                  color: Colors.white,
+                                  fontFamilyFallback: [
+                                    'Songti SC',
+                                    'STSong',
+                                    'Noto Serif SC',
+                                    'serif',
+                                  ],
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(b.author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color:
+                                          Colors.white.withValues(alpha: .85))),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: .18),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(b.format.toUpperCase(),
+                                    style: TextStyle(
+                                        fontSize: 9,
+                                        letterSpacing: 1,
+                                        color: Colors.white
+                                            .withValues(alpha: .9))),
+                              ),
+                            ],
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 6),
-                LinearProgressIndicator(
-                    value: pct,
-                    minHeight: 3,
-                    borderRadius: BorderRadius.circular(2)),
-                const SizedBox(height: 2),
-                Text('${(pct * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).colorScheme.outline)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: LinearProgressIndicator(
+                          value: pct,
+                          minHeight: 3,
+                          borderRadius: BorderRadius.circular(2)),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('${(pct * 100).toStringAsFixed(0)}%',
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.outline)),
+                  ],
+                ),
               ],
             ),
           );

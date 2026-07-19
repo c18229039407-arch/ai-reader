@@ -37,7 +37,13 @@ class _SearchScreenState extends State<SearchScreen> {
       }
       setState(() => _results = all);
     } catch (e) {
-      setState(() => _error = '$e');
+      setState(() => _error = '连接公版书源失败。\n\n'
+          '内置源（Project Gutenberg）的服务器在境外，部分网络环境无法直接访问。'
+          '你可以：\n'
+          '① 换个网络环境重试；\n'
+          '② 在「设置 → 自定义公版书源」添加可访问的镜像源；\n'
+          '③ 直接用书架的「导入书籍」读自己的文件——阅读和 AI 功能完全不受影响。\n\n'
+          '技术信息：$e');
     } finally {
       setState(() => _searching = false);
     }

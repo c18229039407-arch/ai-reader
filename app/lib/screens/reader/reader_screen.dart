@@ -740,11 +740,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final hasNote = _notesAt(i).isNotEmpty;
     final translated = _translation.of(_chapterIndex, i);
 
-    final baseStyle = TextStyle(fontSize: s.fontSize, height: s.lineHeight);
+    // 正文用衬线字体（书感）；系统无宋体时逐级回退
+    const serifFallback = [
+      'Songti SC',
+      'STSong',
+      'Noto Serif SC',
+      'Source Han Serif SC',
+      'serif',
+    ];
+    final baseStyle = TextStyle(
+      fontSize: s.fontSize,
+      height: s.lineHeight,
+      fontFamilyFallback: serifFallback,
+      letterSpacing: 0.2,
+    );
     final dimStyle = TextStyle(
-        fontSize: s.fontSize - 1,
-        height: s.lineHeight,
-        color: Theme.of(context).colorScheme.outline);
+      fontSize: s.fontSize - 1,
+      height: s.lineHeight,
+      fontFamilyFallback: serifFallback,
+      color: Theme.of(context).colorScheme.outline,
+    );
 
     Widget body;
     switch (_mode) {
