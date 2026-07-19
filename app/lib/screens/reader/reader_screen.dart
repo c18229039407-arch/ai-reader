@@ -60,6 +60,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Timer? _saveDebounce;
 
   String _selectedText = '';
+  bool _selBarVisible = false; // 划选后自动浮出的操作条
   Widget? _sidePanel;
 
   ChapterText? get _chapter =>
@@ -677,18 +678,59 @@ class _ReaderScreenState extends State<ReaderScreen> {
           Expanded(
             child: Row(
               children: [
-                Expanded(child: _readerBody(ch, s)),
-                if (_wide && _sidePanel != null)
-                  Container(
-                    width: 360,
-                    decoration: BoxDecoration(
-                      border: Border(
-                          left: BorderSide(
-                              color: Theme.of(context).dividerColor,
-                              width: 0.5)),
-                    ),
-                    child: _sidePanel,
+                Expanded(
+                  child: Stack(
+                    children: [
+                      _readerBody(ch, s),
+                      // 划选后自动浮出的操作条（免右键，动效 L2）
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 18,
+                        child: IgnorePointer(
+                          ignoring: !_selBarVisible,
+                          child: AnimatedSlide(
+                            duration: const Duration(milliseconds: 220),
+                            curve: Curves.easeOutCubic,
+                            offset: _selBarVisible
+                                ? Offset.zero
+                                : const Offset(0, 1.6),
+                            child: AnimatedOpacity(
+                              duration: const Duration(milliseconds: 180),
+                              opacity: _selBarVisible ? 1 : 0,
+                              child: Center(child: _selectionBar(context)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                // 宽屏解释侧栏：滑入/滑出动效
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 260),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, anim) => SlideTransition(
+                    position: Tween<Offset>(
+                            begin: const Offset(1, 0), end: Offset.zero)
+                        .animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
+                  ),
+                  child: (_wide && _sidePanel != null)
+                      ? Container(
+                          key: ValueKey(_sidePanel.hashCode),
+                          width: 360,
+                          decoration: BoxDecoration(
+                            border: Border(
+                                left: BorderSide(
+                                    color: Theme.of(context).dividerColor,
+                                    width: 0.5)),
+                          ),
+                          child: _sidePanel,
+                        )
+                      : const SizedBox.shrink(),
+                ),
               ],
             ),
           ),
@@ -697,9 +739,69 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// 划选后浮出的快捷操作条（比右键菜单更顺手的主路径）。
+  Widget _selectionBar(BuildContext context) {
+    final aiOn = widget.settings.aiEnabled;
+    final scheme = Theme.of(context).colorScheme;
+    Widget action(IconData icon, String label, VoidCallback onTap) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 17, color: scheme.onPrimaryContainer),
+            const SizedBox(width: 5),
+            Text(label,
+                style:
+                    TextStyle(fontSize: 13, color: scheme.onPrimaryContainer)),
+          ]),
+        ),
+      );
+    }
+
+    return Material(
+      color: scheme.primaryContainer,
+      elevation: 6,
+      shadowColor: Colors.black.withValues(alpha: .3),
+      borderRadius: BorderRadius.circular(24),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (aiOn)
+            action(Icons.auto_awesome, 'AI 解释', () {
+              _runAi(translate: false);
+            }),
+          if (aiOn)
+            action(Icons.translate, '翻译', () {
+              _runAi(translate: true);
+            }),
+          action(Icons.border_color_outlined, '高亮', () {
+            _toggleHighlight(0);
+            setState(() => _selBarVisible = false);
+          }),
+          action(Icons.sticky_note_2_outlined, '笔记', _addNote),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(Icons.close,
+                size: 16,
+                color: scheme.onPrimaryContainer.withValues(alpha: .6)),
+            onPressed: () => setState(() => _selBarVisible = false),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _readerBody(ChapterText ch, SettingsStore s) {
     return SelectionArea(
-      onSelectionChanged: (c) => _selectedText = c?.plainText ?? '',
+      onSelectionChanged: (c) {
+        _selectedText = c?.plainText ?? '';
+        final has = _selectedText.trim().isNotEmpty;
+        if (has != _selBarVisible) {
+          setState(() => _selBarVisible = has);
+        }
+      },
       contextMenuBuilder: (context, state) {
         final aiOn = widget.settings.aiEnabled;
         return AdaptiveTextSelectionToolbar.buttonItems(
@@ -798,18 +900,35 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   if (hasExplain)
                     GestureDetector(
                       onTap: () => _openSaved(i),
-                      child: Container(
-                        margin: const EdgeInsets.only(left: 6, bottom: 2),
-                        width: 18,
-                        height: 18,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Theme.of(context).colorScheme.primary,
+                      // ✦ 锚点出现时的弹性缩放动效（L2）
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0.4, end: 1.0),
+                        duration: const Duration(milliseconds: 420),
+                        curve: Curves.elasticOut,
+                        builder: (_, v, child) =>
+                            Transform.scale(scale: v, child: child),
+                        child: Container(
+                          margin: const EdgeInsets.only(left: 6, bottom: 2),
+                          width: 18,
+                          height: 18,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Theme.of(context).colorScheme.primary,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: .4),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: const Text('✦',
+                              style:
+                                  TextStyle(fontSize: 10, color: Colors.white)),
                         ),
-                        child: const Text('✦',
-                            style:
-                                TextStyle(fontSize: 10, color: Colors.white)),
                       ),
                     ),
                   if (hasNote)

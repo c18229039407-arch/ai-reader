@@ -173,7 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Expanded(child: Text(statusText)),
                   TextButton(onPressed: _check, child: const Text('重新检测')),
                 ]),
-                if (_models.isNotEmpty)
+                if (_models.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
                     initialValue: _models.contains(s.model) ? s.model : null,
                     decoration: const InputDecoration(
@@ -185,6 +185,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (v != null) setState(() => s.model = v);
                     },
                   ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '电脑卡顿？8GB 内存的 M1/M2 跑 7b 模型容易内存吃紧。'
+                    '终端执行 ollama pull qwen2.5:3b（仅 1.9GB）后回来切换，流畅得多；'
+                    '仍卡可再降 qwen2.5:1.5b。',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(height: 1.5),
+                  ),
+                ],
               ],
               const SizedBox(height: 28),
               Text('我的画像（用于个性化类比）',

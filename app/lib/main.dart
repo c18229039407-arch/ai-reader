@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -60,6 +61,19 @@ class AIReaderApp extends StatelessWidget {
                 const SnackBarThemeData(behavior: SnackBarBehavior.floating),
             cardTheme: const CardThemeData(
                 elevation: 0, surfaceTintColor: Colors.transparent),
+            // L2 动效：页面切换使用共享轴过渡（水平推入，层级感）
+            pageTransitionsTheme: const PageTransitionsTheme(builders: {
+              TargetPlatform.macOS: SharedAxisPageTransitionsBuilder(
+                  transitionType: SharedAxisTransitionType.horizontal),
+              TargetPlatform.android: SharedAxisPageTransitionsBuilder(
+                  transitionType: SharedAxisTransitionType.horizontal),
+              TargetPlatform.iOS: SharedAxisPageTransitionsBuilder(
+                  transitionType: SharedAxisTransitionType.horizontal),
+              TargetPlatform.linux: SharedAxisPageTransitionsBuilder(
+                  transitionType: SharedAxisTransitionType.horizontal),
+              TargetPlatform.windows: SharedAxisPageTransitionsBuilder(
+                  transitionType: SharedAxisTransitionType.horizontal),
+            }),
           );
         }
 
