@@ -63,9 +63,18 @@ class AIReaderApp extends StatelessWidget {
         const seed = Color(0xFF2E6B4F);
         ThemeData themed(Brightness b) {
           final scheme = ColorScheme.fromSeed(seedColor: seed, brightness: b);
+          final isApple = !kIsWeb && (Platform.isMacOS || Platform.isIOS);
           return ThemeData(
             colorScheme: scheme,
             useMaterial3: true,
+            // 苹果平台用系统 San Francisco 字体（HIG）
+            fontFamily: isApple ? '.AppleSystemUIFont' : null,
+            dividerTheme: const DividerThemeData(thickness: 0.5),
+            floatingActionButtonTheme: FloatingActionButtonThemeData(
+              backgroundColor: scheme.primary,
+              foregroundColor: scheme.onPrimary,
+              elevation: 2,
+            ),
             scaffoldBackgroundColor: b == Brightness.light
                 ? const Color(0xFFF7F6F2) // 暖白纸感
                 : null,

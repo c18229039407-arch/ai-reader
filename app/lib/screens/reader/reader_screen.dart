@@ -518,9 +518,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return Scaffold(
       backgroundColor: _readerBackground(context),
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: '返回书架',
+          icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
         title: Text('${content.title} · ${ch.title}',
             overflow: TextOverflow.ellipsis),
         actions: [
+          Builder(
+            builder: (ctx) => IconButton(
+              tooltip: '目录',
+              icon: const Icon(Icons.format_list_bulleted),
+              onPressed: () => Scaffold.of(ctx).openDrawer(),
+            ),
+          ),
           if (hasAnyTranslation)
             PopupMenuButton<DisplayMode>(
               tooltip: '显示模式（原文/译文/对照）',

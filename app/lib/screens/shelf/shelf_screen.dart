@@ -347,6 +347,46 @@ class _ShelfScreenState extends State<ShelfScreen> {
     _refresh();
   }
 
+  Future<void> _showBookContextMenu(Book book, Offset pos) async {
+    final action = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      items: [
+        PopupMenuItem(
+            value: 'open',
+            child: Row(children: [
+              const Icon(Icons.menu_book_outlined, size: 18),
+              const SizedBox(width: 10),
+              Text('打开《${book.title}》',
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ])),
+        const PopupMenuItem(
+            value: 'tags',
+            child: Row(children: [
+              Icon(Icons.label_outline, size: 18),
+              SizedBox(width: 10),
+              Text('编辑标签'),
+            ])),
+        const PopupMenuDivider(),
+        const PopupMenuItem(
+            value: 'remove',
+            child: Row(children: [
+              Icon(Icons.delete_outline, size: 18),
+              SizedBox(width: 10),
+              Text('移除书籍'),
+            ])),
+      ],
+    );
+    switch (action) {
+      case 'open':
+        _open(book);
+      case 'tags':
+        _editTags(book);
+      case 'remove':
+        _confirmRemove(book);
+    }
+  }
+
   void _bookMenu(Book book) {
     showModalBottomSheet(
       context: context,
@@ -591,114 +631,124 @@ class _ShelfScreenState extends State<ShelfScreen> {
           final palette =
               _coverPalettes[b.title.hashCode.abs() % _coverPalettes.length];
           return _Hoverable(
-              child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () => _open(b),
-            onLongPress: () => _bookMenu(b),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(palette[0]), Color(palette[1])],
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Color(palette[0]).withValues(alpha: .35),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Stack(
+              child: GestureDetector(
+                  onSecondaryTapUp: (d) =>
+                      _showBookContextMenu(b, d.globalPosition),
+                  onDoubleTap: () => _bookMenu(b),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _open(b),
+                    onLongPress: () => _bookMenu(b),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 书脊装饰线
-                        Positioned(
-                          left: 10,
-                          top: 0,
-                          bottom: 0,
+                        Expanded(
                           child: Container(
-                            width: 1.5,
-                            color: Colors.white.withValues(alpha: .28),
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(palette[0]), Color(palette[1])],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      Color(palette[0]).withValues(alpha: .35),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Stack(
+                              children: [
+                                // 书脊装饰线
+                                Positioned(
+                                  left: 10,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: Container(
+                                    width: 1.5,
+                                    color: Colors.white.withValues(alpha: .28),
+                                  ),
+                                ),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(22, 16, 14, 14),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        b.title,
+                                        maxLines: 4,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 15,
+                                          height: 1.4,
+                                          color: Colors.white,
+                                          fontFamilyFallback: [
+                                            'Songti SC',
+                                            'STSong',
+                                            'Noto Serif SC',
+                                            'serif',
+                                          ],
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      Text(b.author,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.white
+                                                  .withValues(alpha: .85))),
+                                      const SizedBox(height: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 7, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white
+                                              .withValues(alpha: .18),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: Text(b.format.toUpperCase(),
+                                            style: TextStyle(
+                                                fontSize: 9,
+                                                letterSpacing: 1,
+                                                color: Colors.white
+                                                    .withValues(alpha: .9))),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(22, 16, 14, 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                b.title,
-                                maxLines: 4,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                  height: 1.4,
-                                  color: Colors.white,
-                                  fontFamilyFallback: [
-                                    'Songti SC',
-                                    'STSong',
-                                    'Noto Serif SC',
-                                    'serif',
-                                  ],
-                                ),
-                              ),
-                              const Spacer(),
-                              Text(b.author,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 11,
-                                      color:
-                                          Colors.white.withValues(alpha: .85))),
-                              const SizedBox(height: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: .18),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(b.format.toUpperCase(),
-                                    style: TextStyle(
-                                        fontSize: 9,
-                                        letterSpacing: 1,
-                                        color: Colors.white
-                                            .withValues(alpha: .9))),
-                              ),
-                            ],
-                          ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: LinearProgressIndicator(
+                                  value: pct,
+                                  minHeight: 3,
+                                  borderRadius: BorderRadius.circular(2)),
+                            ),
+                            const SizedBox(width: 6),
+                            Text('${(pct * 100).toStringAsFixed(0)}%',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color:
+                                        Theme.of(context).colorScheme.outline)),
+                          ],
                         ),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: LinearProgressIndicator(
-                          value: pct,
-                          minHeight: 3,
-                          borderRadius: BorderRadius.circular(2)),
-                    ),
-                    const SizedBox(width: 6),
-                    Text('${(pct * 100).toStringAsFixed(0)}%',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context).colorScheme.outline)),
-                  ],
-                ),
-              ],
-            ),
-          ));
+                  )));
         },
       );
     });
