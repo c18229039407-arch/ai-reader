@@ -38,7 +38,15 @@
 
 ## 快速开始
 
-前置：macOS（Apple Silicon 推荐）+ [Flutter](https://docs.flutter.dev/get-started/install) + [Ollama](https://ollama.com)。零基础环境搭建看 [docs/phase0-setup.md](./docs/phase0-setup.md)。
+### 方式一：直接下载（推荐，无需任何开发环境）
+
+1. 装 AI 引擎：到 [ollama.com](https://ollama.com) 下载安装 Ollama（Mac 拖进应用程序即可），然后终端执行一行：`ollama pull qwen2.5:7b`
+2. 到 [Releases](https://github.com/c18229039407-arch/ai-reader/releases) 下载 `linjian-reader-macos.zip`（macOS）或 `linjian-reader-android.apk`（Android），解压/安装即用
+3. macOS 首次打开：**右键 → 打开**（未签名构建）；若提示已损坏，终端执行 `xattr -cr <App路径>`
+
+### 方式二：从源码构建（开发者）
+
+前置：[Flutter](https://docs.flutter.dev/get-started/install) + Ollama。零基础环境搭建看 [docs/phase0-setup.md](./docs/phase0-setup.md)。
 
 ```bash
 git clone https://github.com/c18229039407-arch/ai-reader.git
@@ -48,8 +56,6 @@ flutter pub get
 # macOS 需放开沙盒网络/文件权限（两处 entitlements，详见 app/README.md）
 flutter run -d macos
 ```
-
-模型准备（本地零成本）：`ollama pull qwen2.5:7b`。
 
 ## 仓库结构
 

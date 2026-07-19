@@ -1,0 +1,118 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: 构建 macOS 应用
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.35.3
+          cache: true
+
+      - name: 生成 macOS 平台工程
+        run: flutter create --platforms=macos --project-name ai_reader .
+
+      - name: 放开沙盒网络与文件权限（entitlements）
+        run: |
+          python3 - <<'EOF'
+          keys = ('    <key>com.apple.security.network.client</key>\n'
+                  '    <true/>\n'
+                  '    <key>com.apple.security.files.user-selected.read-only</key>\n'
+                  '    <true/>\n')
+          for f in ('macos/Runner/DebugProfile.entitlements',
+                    'macos/Runner/Release.entitlements'):
+              s = open(f).read()
+              if 'network.client' not in s:
+                  s = s.replace('</dict>', keys + '</dict>', 1)
+                  open(f, 'w').write(s)
+                  print('patched', f)
+          EOF
+
+      - name: 应用显示名改为「林间阅读」
+        run: |
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName 林间阅读" macos/Runner/Info.plist 2>/dev/null || \
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 林间阅读" macos/Runner/Info.plist || true
+
+      - name: 构建
+        run: flutter build macos --release
+
+      - name: 打包 zip
+        run: |
+          cd build/macos/Build/Products/Release
+          ditto -c -k --sequesterRsrc --keepParent *.app linjian-reader-macos.zip
+          mv linjian-reader-macos.zip $GITHUB_WORKSPACE/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linjian-reader-macos
+          path: linjian-reader-macos.zip
+
+      - name: 附加到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: linjian-reader-macos.zip
+          body: |
+            ⚠️ 未签名构建：首次打开请「右键 → 打开」；若提示已损坏，终端执行
+            `xattr -cr /Applications/ai_reader.app`（路径按实际调整）。
+            使用前请先安装 [Ollama](https://ollama.com) 并执行 `ollama pull qwen2.5:7b`。
+
+  android:
+    name: 构建 Android APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.35.3
+          cache: true
+
+      - name: 生成 Android 平台工程
+        run: flutter create --platforms=android --project-name ai_reader .
+
+      - name: 允许明文流量（连局域网 Ollama）+ 应用名
+        run: |
+          sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
+          sed -i 's/android:label="ai_reader"/android:label="林间阅读"/' android/app/src/main/AndroidManifest.xml || true
+
+      - name: 构建 APK
+        run: flutter build apk --release
+
+      - name: 重命名产物
+        run: mv build/app/outputs/flutter-apk/app-release.apk $GITHUB_WORKSPACE/linjian-reader-android.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linjian-reader-android
+          path: linjian-reader-android.apk
+
+      - name: 附加到 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: linjian-reader-android.apk
