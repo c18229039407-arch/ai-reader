@@ -176,6 +176,13 @@ class SettingsStore extends ChangeNotifier {
     _prefs.setString('doubao_voice', v.trim());
   }
 
+  /// 正文字体：system（系统宋体）| wenkai（内置霞鹜文楷 Lite，OFL 开源）。
+  String get readerFont => _prefs.getString('reader_font') ?? 'system';
+  set readerFont(String v) {
+    _prefs.setString('reader_font', v);
+    notifyListeners();
+  }
+
   /// 字间距（px）。
   double get letterSpacing => _prefs.getDouble('letter_spacing') ?? 0.2;
   set letterSpacing(double v) {

@@ -981,6 +981,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                       fit: BoxFit.cover,
                                       width: double.infinity,
                                       height: double.infinity,
+                                      // 封面按卡片尺寸解码，藏书多时内存可控
+                                      cacheWidth: 400,
                                       errorBuilder: (_, __, ___) => Container(
                                         decoration: BoxDecoration(
                                           gradient: LinearGradient(

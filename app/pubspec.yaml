@@ -1,7 +1,7 @@
 name: ai_reader
 description: "林间阅读 (Linjian Reader) — 本地优先、AI 辅助理解的开源电子书阅读器（Phase 1 MVP: macOS）"
 publish_to: "none"
-version: 0.2.3
+version: 0.3.0
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -32,4 +32,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icon/logo.png
+    - assets/fonts/OFL.txt
+  fonts:
+    - family: LXGWWenKai
+      fonts:
+        - asset: assets/fonts/LXGWWenKaiLite-Regular.ttf
 

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
@@ -261,7 +262,8 @@ class LibraryStore {
     if (book.format == 'txt') {
       return loadTxt(bytes, fallbackTitle: book.title);
     }
-    return loadEpub(bytes);
+    // 大部头 EPUB 解析放 isolate，打开大书时 UI 不卡帧
+    return compute(loadEpub, bytes);
   }
 
   // ---------- 每本书的状态（E3/E4：按设备分文件写、读取时合并）----------

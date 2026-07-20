@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../models/models.dart';
 import '../../services/batch_translator.dart';
@@ -629,9 +630,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final s = widget.settings;
     final hasAnyTranslation = _translation.paras.isNotEmpty;
 
-    return Scaffold(
+    final scaffold = Scaffold(
       backgroundColor: _readerBackground(context),
-      appBar: AppBar(
+      appBar: _immersive
+          ? null
+          : AppBar(
         leading: IconButton(
           tooltip: '返回书架',
           icon: const Icon(Icons.arrow_back_ios_new, size: 18),
@@ -920,6 +923,79 @@ class _ReaderScreenState extends State<ReaderScreen> {
         ],
       ),
     );
+
+    // —— 桌面快捷键 + 沉浸模式手势 ——
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowRight): _kbNext,
+        const SingleActivator(LogicalKeyboardKey.arrowDown): _kbNext,
+        const SingleActivator(LogicalKeyboardKey.pageDown): _kbNext,
+        const SingleActivator(LogicalKeyboardKey.space): _kbNext,
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): _kbPrev,
+        const SingleActivator(LogicalKeyboardKey.arrowUp): _kbPrev,
+        const SingleActivator(LogicalKeyboardKey.pageUp): _kbPrev,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): () =>
+            _openSearchInBook(),
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+            _openSearchInBook(),
+        const SingleActivator(LogicalKeyboardKey.keyB, meta: true):
+            _toggleBookmark,
+        const SingleActivator(LogicalKeyboardKey.keyB, control: true):
+            _toggleBookmark,
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_immersive) setState(() => _immersive = false);
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: scaffold,
+      ),
+    );
+  }
+
+  // —— 沉浸模式（工具栏隐藏，专注正文；点击正文区切换）——
+  bool _immersive = false;
+
+  void _toggleImmersive() => setState(() => _immersive = !_immersive);
+
+  void _openSearchInBook() {
+    final content = _content;
+    if (content == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => SearchInBookScreen(
+        book: content,
+        onJump: (c, p) => _goto(c, paragraph: p),
+      ),
+    ));
+  }
+
+  /// 键盘翻页：翻页模式走页，滚动模式滚一屏。
+  void _kbNext() {
+    if (widget.settings.readingMode == 'page') {
+      _pageCtrl?.nextPage(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic);
+    } else if (_scroll.hasClients) {
+      final target = (_scroll.offset + _scroll.position.viewportDimension * .9)
+          .clamp(0.0, _scroll.position.maxScrollExtent);
+      _scroll.animateTo(target,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic);
+    }
+  }
+
+  void _kbPrev() {
+    if (widget.settings.readingMode == 'page') {
+      _pageCtrl?.previousPage(
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic);
+    } else if (_scroll.hasClients) {
+      final target = (_scroll.offset - _scroll.position.viewportDimension * .9)
+          .clamp(0.0, _scroll.position.maxScrollExtent);
+      _scroll.animateTo(target,
+          duration: const Duration(milliseconds: 240),
+          curve: Curves.easeOutCubic);
+    }
   }
 
   /// 划选后浮出的快捷操作条（比右键菜单更顺手的主路径）。
@@ -1407,6 +1483,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
         lineHeight: s.lineHeight,
         letterSpacing: s.letterSpacing,
         paraSpacing: s.paraSpacing,
+        fontFamilyFallback: s.readerFont == 'wenkai'
+            ? const ['LXGWWenKai', 'Songti SC', 'serif']
+            : const ['Songti SC', 'STSong', 'serif'],
       );
       if (_pages == null || _pagesSpec != spec || _pagesChapter != _chapterIndex) {
         _pages = paginateChapter(ch, spec);
@@ -1435,35 +1514,79 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 setState(() {});
               },
               itemBuilder: (_, p) {
-                if (p == pages.length) {
-                  return Center(
-                      child: SingleChildScrollView(child: _chapterEnd()));
-                }
-                return Center(
-                  child: SizedBox(
-                    width: contentWidth.toDouble(),
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 24),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final slice in pages[p].slices)
-                            _paragraph(ch, slice.para, s,
-                                subStart: slice.start,
-                                subEnd: slice.end == 0 &&
-                                        ch.blocks[slice.para].kind ==
-                                            ParaKind.image
-                                    ? null
-                                    : slice.end),
-                        ],
+                final pageContent = p == pages.length
+                    ? Center(
+                        child: SingleChildScrollView(child: _chapterEnd()))
+                    : Center(
+                        child: SizedBox(
+                          width: contentWidth.toDouble(),
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 24),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final slice in pages[p].slices)
+                                  _paragraph(ch, slice.para, s,
+                                      subStart: slice.start,
+                                      subEnd: slice.end == 0 &&
+                                              ch.blocks[slice.para].kind ==
+                                                  ParaKind.image
+                                          ? null
+                                          : slice.end),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+
+                // 覆盖式翻页：向前翻时旧页近似原地（仅 3% 视差），
+                // 新页从右侧压上来，左缘带书页阴影。
+                if (reduceMotion(context)) return pageContent;
+                return AnimatedBuilder(
+                  animation: _pageCtrl!,
+                  child: pageContent,
+                  builder: (context, child) {
+                    var delta = 0.0;
+                    if (_pageCtrl!.hasClients &&
+                        _pageCtrl!.position.haveDimensions) {
+                      delta = (_pageCtrl!.page ?? _pageIndex.toDouble()) - p;
+                    }
+                    final w = cons.maxWidth;
+                    // delta ∈ (0,1]：本页正被右侧新页覆盖 → 抵消滑动保持近似原地
+                    final holdBack = delta.clamp(0.0, 1.0) * w * 0.97;
+                    final covered = delta > 0 && delta < 1;
+                    return Transform.translate(
+                      offset: Offset(holdBack, 0),
+                      child: Container(
+                        decoration: delta < 0 && delta > -1
+                            // 压上来的新页：左缘阴影制造纸张层次
+                            ? BoxDecoration(boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      Colors.black.withValues(alpha: .18),
+                                  blurRadius: 16,
+                                  offset: const Offset(-6, 0),
+                                ),
+                              ], color: _readerBackground(context))
+                            : BoxDecoration(
+                                color: _readerBackground(context)),
+                        foregroundDecoration: covered
+                            // 被覆盖的旧页轻微压暗，增强层次
+                            ? BoxDecoration(
+                                color: Colors.black.withValues(
+                                    alpha:
+                                        0.12 * delta.clamp(0.0, 1.0)))
+                            : null,
+                        child: child,
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 );
               },
             ),
           ),
-          // 页码指示 + 翻页按钮（触达目标 ≥ 44）
+          // 页码指示 + 翻页按钮（触达目标 ≥ 44）；沉浸模式下隐藏
+          if (!_immersive)
           SizedBox(
             height: 44,
             child: Row(
@@ -1545,20 +1668,25 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ],
         );
       },
-      child: widget.settings.readingMode == 'page'
-          ? _pagedBody(ch, s)
-          : Scrollbar(
-              controller: _scroll,
-              child: ListView.builder(
+      child: GestureDetector(
+        // 点正文区切换沉浸模式（按钮/链接等自会拦截各自的点击）
+        behavior: HitTestBehavior.translucent,
+        onTap: _toggleImmersive,
+        child: widget.settings.readingMode == 'page'
+            ? _pagedBody(ch, s)
+            : Scrollbar(
                 controller: _scroll,
-                padding: EdgeInsets.symmetric(
-                    horizontal: s.pageMargin, vertical: 20),
-                itemCount: ch.paragraphs.length + 1,
-                itemBuilder: (_, i) => i < ch.paragraphs.length
-                    ? _paragraph(ch, i, s)
-                    : _chapterEnd(),
+                child: ListView.builder(
+                  controller: _scroll,
+                  padding: EdgeInsets.symmetric(
+                      horizontal: s.pageMargin, vertical: 20),
+                  itemCount: ch.paragraphs.length + 1,
+                  itemBuilder: (_, i) => i < ch.paragraphs.length
+                      ? _paragraph(ch, i, s)
+                      : _chapterEnd(),
+                ),
               ),
-            ),
+      ),
     );
   }
 
@@ -1716,13 +1844,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final translated = isFullPara ? _translation.of(_chapterIndex, i) : null;
 
     // 正文用衬线字体（书感）；系统无宋体时逐级回退
-    const serifFallback = [
-      'Songti SC',
-      'STSong',
-      'Noto Serif SC',
-      'Source Han Serif SC',
-      'serif',
-    ];
+    // 正文字体：内置霞鹜文楷（OFL）或系统宋体
+    final serifFallback = widget.settings.readerFont == 'wenkai'
+        ? const ['LXGWWenKai', 'Songti SC', 'STSong', 'Noto Serif SC', 'serif']
+        : const [
+            'Songti SC',
+            'STSong',
+            'Noto Serif SC',
+            'Source Han Serif SC',
+            'serif',
+          ];
     final paperFg = _paper.fg;
     // 标题分级：字号增量与字重同 paginator._styleFor 保持一致（分页测量依赖）
     final (sizeDelta, weight, height) = switch (block.kind) {
@@ -1896,7 +2027,31 @@ class _ReaderScreenState extends State<ReaderScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('排版设置', style: Theme.of(ctx).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
+                Row(children: [
+                  const SizedBox(width: 72, child: Text('字体')),
+                  ChoiceChip(
+                    label: const Text('系统宋体'),
+                    selected: s.readerFont != 'wenkai',
+                    onSelected: (_) {
+                      s.readerFont = 'system';
+                      setSheet(() {});
+                      setState(() {});
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('霞鹜文楷',
+                        style: TextStyle(fontFamily: 'LXGWWenKai')),
+                    selected: s.readerFont == 'wenkai',
+                    onSelected: (_) {
+                      s.readerFont = 'wenkai';
+                      setSheet(() {});
+                      setState(() {});
+                    },
+                  ),
+                ]),
+                const SizedBox(height: 4),
                 Row(children: [
                   const SizedBox(width: 72, child: Text('字号')),
                   Expanded(

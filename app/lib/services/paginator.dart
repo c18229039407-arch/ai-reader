@@ -31,6 +31,7 @@ class PaginateSpec {
     this.letterSpacing = 0.2,
     this.paraSpacing = 14,
     this.imageHeight = 320,
+    this.fontFamilyFallback = const [],
   });
 
   final double width;
@@ -40,6 +41,7 @@ class PaginateSpec {
   final double letterSpacing;
   final double paraSpacing;
   final double imageHeight;
+  final List<String> fontFamilyFallback;
 
   @override
   bool operator ==(Object other) =>
@@ -49,11 +51,12 @@ class PaginateSpec {
       other.fontSize == fontSize &&
       other.lineHeight == lineHeight &&
       other.letterSpacing == letterSpacing &&
-      other.paraSpacing == paraSpacing;
+      other.paraSpacing == paraSpacing &&
+      other.fontFamilyFallback.join() == fontFamilyFallback.join();
 
   @override
-  int get hashCode =>
-      Object.hash(width, height, fontSize, lineHeight, letterSpacing, paraSpacing);
+  int get hashCode => Object.hash(width, height, fontSize, lineHeight,
+      letterSpacing, paraSpacing, fontFamilyFallback.join());
 }
 
 TextStyle _styleFor(ParaKind kind, PaginateSpec spec) {
@@ -62,22 +65,26 @@ TextStyle _styleFor(ParaKind kind, PaginateSpec spec) {
       return TextStyle(
           fontSize: spec.fontSize + 8,
           height: 1.4,
-          fontWeight: FontWeight.w600);
+          fontWeight: FontWeight.w600,
+          fontFamilyFallback: spec.fontFamilyFallback);
     case ParaKind.h2:
       return TextStyle(
           fontSize: spec.fontSize + 5,
           height: 1.4,
-          fontWeight: FontWeight.w600);
+          fontWeight: FontWeight.w600,
+          fontFamilyFallback: spec.fontFamilyFallback);
     case ParaKind.h3:
       return TextStyle(
           fontSize: spec.fontSize + 3,
           height: 1.4,
-          fontWeight: FontWeight.w600);
+          fontWeight: FontWeight.w600,
+          fontFamilyFallback: spec.fontFamilyFallback);
     default:
       return TextStyle(
           fontSize: spec.fontSize,
           height: spec.lineHeight,
-          letterSpacing: spec.letterSpacing);
+          letterSpacing: spec.letterSpacing,
+          fontFamilyFallback: spec.fontFamilyFallback);
   }
 }
 
