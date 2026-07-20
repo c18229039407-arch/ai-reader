@@ -95,6 +95,7 @@ class ReadingState {
     required this.scrollOffset,
     required this.percent,
     required this.updatedAt,
+    this.anchorPara = 0,
   });
 
   final int chapterIndex;
@@ -102,11 +103,15 @@ class ReadingState {
   final double percent; // 0..1，粗粒度整书进度
   final DateTime updatedAt;
 
+  /// 段落锚点（翻页模式的进度定位；滚动模式恢复时作 scrollOffset 的兜底）。
+  final int anchorPara;
+
   Map<String, dynamic> toJson() => {
         'chapterIndex': chapterIndex,
         'scrollOffset': scrollOffset,
         'percent': percent,
         'updatedAt': updatedAt.toIso8601String(),
+        if (anchorPara > 0) 'anchorPara': anchorPara,
       };
 
   factory ReadingState.fromJson(Map<String, dynamic> j) => ReadingState(
@@ -115,6 +120,7 @@ class ReadingState {
         percent: (j['percent'] as num?)?.toDouble() ?? 0,
         updatedAt: DateTime.tryParse(j['updatedAt'] as String? ?? '') ??
             DateTime.now(),
+        anchorPara: (j['anchorPara'] as num?)?.toInt() ?? 0,
       );
 
   static ReadingState initial() => ReadingState(

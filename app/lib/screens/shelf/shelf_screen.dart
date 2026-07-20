@@ -726,7 +726,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                       Text('书架',
                           style: TextStyle(
                               fontSize: 28,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w600,
                               fontFamilyFallback: serif)),
                       const SizedBox(width: 12),
                       if (_books.isNotEmpty)
@@ -842,20 +842,47 @@ class _ShelfScreenState extends State<ShelfScreen> {
     );
   }
 
+  // 空状态三段式：为什么空 → 下一步 → 直达动作（借鉴 Primer/Material 空状态范式）
   Widget _empty(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.forest_outlined,
-                size: 72, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 16),
-            const Text('书架还是空的'),
-            const SizedBox(height: 8),
-            Text('点右下角「导入书籍」，支持 EPUB / TXT',
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.outline,
-                    fontSize: 13)),
-          ],
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.forest_outlined,
+                  size: 56, color: Theme.of(context).colorScheme.outline),
+              const SizedBox(height: 20),
+              const Text('书架还是空的',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              Text('导入本机的 EPUB / TXT / PDF 文件，\n或者先从公版书库搜一本免费的开始。',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.outline,
+                      fontSize: 13,
+                      height: 1.7)),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.tonal(
+                    onPressed: _import,
+                    child: const Text('导入书籍'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context)
+                        .push(MaterialPageRoute(
+                            builder: (_) => SearchScreen(
+                                store: widget.store,
+                                settings: widget.settings)))
+                        .then((_) => _refresh()),
+                    child: const Text('搜公版书'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       );
 
@@ -942,7 +969,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                             overflow: TextOverflow.ellipsis,
                                             style: const TextStyle(
                                                 color: Colors.white,
-                                                fontWeight: FontWeight.w700)),
+                                                fontWeight: FontWeight.w600)),
                                       ),
                                     ),
                                   )

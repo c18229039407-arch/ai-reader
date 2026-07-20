@@ -42,7 +42,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('书架还是空的'), findsOneWidget);
-    expect(find.text('导入书籍'), findsOneWidget);
+    // 右下角 FAB + 空状态 CTA 各一个
+    expect(find.text('导入书籍'), findsNWidgets(2));
+    expect(find.text('搜公版书'), findsOneWidget);
     expect(find.byIcon(Icons.settings_outlined), findsOneWidget);
   });
 

@@ -148,6 +148,12 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 阅读模式：scroll（上下滚动，默认）| page（左右翻页）。
+  String get readingMode => _prefs.getString('reading_mode') ?? 'scroll';
+  set readingMode(String v) {
+    _prefs.setString('reading_mode', v);
+  }
+
   double get pageMargin => _prefs.getDouble('page_margin') ?? 28;
   set pageMargin(double v) {
     _prefs.setDouble('page_margin', v);

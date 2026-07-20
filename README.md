@@ -31,7 +31,7 @@
 - **本地优先**：书籍与全部阅读数据只存本机；无账号、无云端、无上报。
 - **默认零成本 AI**：自动检测本机 [Ollama](https://ollama.com)（Apple Silicon 推荐），也可自带 OpenAI 兼容 / Anthropic API Key。
 - **双端**：macOS + Android 一套 Flutter 代码；经 [Syncthing](https://syncthing.net) 点对点同步进度与标注，无需服务器。
-- **完整阅读器**：EPUB/TXT/PDF、排版调节、四主题、进度记忆、高亮、笔记、书签、书内检索、标签书架、备份导出。
+- **完整阅读器**：EPUB/TXT/PDF、轻量富文本（标题分级/粗斜体/插图）、滚动与左右翻页双模式、排版调节、九种纸色、进度记忆、高亮、笔记、书签、书内检索、标签书架、备份导出。
 - **公版书内置搜索**：Project Gutenberg + 中文维基文库（含鲁迅、朱自清、老舍等已过版权期的近现代中文作品）一键导入；数据源可插拔。
 
 ## 这不是什么
@@ -90,7 +90,7 @@ flutter run -d macos
 ```bash
 cd app
 flutter analyze   # 0 警告
-flutter test      # 65 项单元/界面测试
+flutter test      # 72 项单元/界面测试
 E2E=1 flutter test test/e2e/phase2_e2e_test.dart   # 端到端（需网络 + Ollama）
 ```
 

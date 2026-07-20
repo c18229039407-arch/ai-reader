@@ -9,6 +9,7 @@ import '../../services/explain_service.dart';
 import '../../services/library_store.dart';
 import '../../services/llm_client.dart';
 import '../../services/ollama_client.dart';
+import '../../services/paginator.dart';
 import '../../services/settings_store.dart';
 import '../../services/translation_store.dart';
 import 'annotations_screen.dart';
@@ -88,9 +89,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _translation = translation;
         _chapterIndex =
             state.reading.chapterIndex.clamp(0, content.chapters.length - 1);
+        _anchorPara = state.reading.anchorPara;
         // 新书首次打开：跳过封面/版权等零碎前页，直达第一个有正文的章节
         if (state.reading.chapterIndex == 0 &&
-            state.reading.scrollOffset == 0) {
+            state.reading.scrollOffset == 0 &&
+            state.reading.anchorPara == 0) {
           final first = content.chapters.indexWhere(
               (c) => c.paragraphs.join().length >= 200);
           if (first > 0) _chapterIndex = first;
@@ -117,12 +120,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _saveProgress() async {
     final content = _content;
     if (content == null) return;
-    final frac = _scroll.hasClients && _scroll.position.maxScrollExtent > 0
-        ? _scroll.offset / _scroll.position.maxScrollExtent
-        : 0.0;
+    final isPage = widget.settings.readingMode == 'page';
+    final frac = isPage
+        ? (_pages == null || _pages!.isEmpty
+            ? 0.0
+            : _pageIndex / _pages!.length)
+        : (_scroll.hasClients && _scroll.position.maxScrollExtent > 0
+            ? _scroll.offset / _scroll.position.maxScrollExtent
+            : 0.0);
     _state.reading = ReadingState(
       chapterIndex: _chapterIndex,
-      scrollOffset: _scroll.hasClients ? _scroll.offset : 0,
+      scrollOffset: !isPage && _scroll.hasClients ? _scroll.offset : 0,
+      anchorPara: _anchorPara,
       percent:
           ((_chapterIndex + frac.clamp(0.0, 1.0)) / content.chapters.length)
               .clamp(0.0, 1.0),
@@ -137,6 +146,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _saveProgress();
     _batch?.pause();
     _scroll.dispose();
+    _pageCtrl?.dispose();
     super.dispose();
   }
 
@@ -496,7 +506,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void _goto(int index, {int? paragraph}) {
     final content = _content;
     if (content == null) return;
-    setState(() => _chapterIndex = index.clamp(0, content.chapters.length - 1));
+    setState(() {
+      _chapterIndex = index.clamp(0, content.chapters.length - 1);
+      _anchorPara = paragraph ?? 0;
+      _pages = null; // 换章重新分页
+    });
     if (_scroll.hasClients) _scroll.jumpTo(0);
     // 段落级跳转（概念本回跳）：MVP 用固定估算滚动，V1 换精确测量
     if (paragraph != null && paragraph > 0 && _scroll.hasClients) {
@@ -598,6 +612,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   _batch?.pause();
                 case 'typo':
                   _showTypography();
+                case 'mode':
+                  setState(() {
+                    final toPage = widget.settings.readingMode != 'page';
+                    if (toPage && _scroll.hasClients) {
+                      // 滚动 → 翻页：用滚动位置估算段落锚点（±1 段可接受）
+                      _anchorPara = (_scroll.offset / 90.0).floor();
+                    }
+                    widget.settings.readingMode = toPage ? 'page' : 'scroll';
+                    _pages = null;
+                  });
+                  _saveProgress();
                 case 'concepts':
                   await Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => ConceptsScreen(
@@ -636,6 +661,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   value: 'annotations', child: Text('标注（书签/笔记/高亮）')),
               const PopupMenuItem(value: 'concepts', child: Text('概念本')),
               const PopupMenuItem(value: 'typo', child: Text('排版设置')),
+              PopupMenuItem(
+                  value: 'mode',
+                  child: Text(widget.settings.readingMode == 'page'
+                      ? '切换为上下滚动'
+                      : '切换为左右翻页')),
               PopupMenuItem(
                   value: 'batch',
                   child: Text(_translation.completed
@@ -838,6 +868,124 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  // —— 翻页模式状态 ——
+  List<BookPage>? _pages;
+  PaginateSpec? _pagesSpec;
+  int _pagesChapter = -1;
+  PageController? _pageCtrl;
+  int _pageIndex = 0;
+  int _anchorPara = 0; // 当前页首段（进度锚点）
+
+  Widget _pagedBody(ChapterText ch, SettingsStore s) {
+    return LayoutBuilder(builder: (context, cons) {
+      final contentWidth =
+          (cons.maxWidth.clamp(0, 720.0)) - s.pageMargin * 2;
+      final spec = PaginateSpec(
+        width: contentWidth.toDouble(),
+        height: cons.maxHeight - 72, // 上下留白 + 页码指示
+        fontSize: s.fontSize,
+        lineHeight: s.lineHeight,
+      );
+      if (_pages == null || _pagesSpec != spec || _pagesChapter != _chapterIndex) {
+        _pages = paginateChapter(ch, spec);
+        _pagesSpec = spec;
+        _pagesChapter = _chapterIndex;
+        _pageIndex = pageForParagraph(_pages!, _anchorPara);
+        _pageCtrl?.dispose();
+        _pageCtrl = PageController(initialPage: _pageIndex);
+      }
+      final pages = _pages!;
+      final dim = _paper.fg?.withValues(alpha: .45) ??
+          Theme.of(context).colorScheme.outline;
+
+      return Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _pageCtrl,
+              itemCount: pages.length + 1, // 末页 = 章末连读区
+              onPageChanged: (p) {
+                _pageIndex = p;
+                if (p < pages.length) {
+                  _anchorPara = pages[p].firstPara;
+                }
+                _saveProgress();
+                setState(() {});
+              },
+              itemBuilder: (_, p) {
+                if (p == pages.length) {
+                  return Center(
+                      child: SingleChildScrollView(child: _chapterEnd()));
+                }
+                return Center(
+                  child: SizedBox(
+                    width: contentWidth.toDouble(),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final slice in pages[p].slices)
+                            _paragraph(ch, slice.para, s,
+                                subStart: slice.start,
+                                subEnd: slice.end == 0 &&
+                                        ch.blocks[slice.para].kind ==
+                                            ParaKind.image
+                                    ? null
+                                    : slice.end),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          // 页码指示 + 翻页按钮（触达目标 ≥ 44）
+          SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: '上一页',
+                  onPressed: _pageIndex > 0
+                      ? () => _pageCtrl?.previousPage(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic)
+                      : (_chapterIndex > 0
+                          ? () => _goto(_chapterIndex - 1)
+                          : null),
+                  icon: Icon(Icons.chevron_left, color: dim),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      _pageIndex < pages.length
+                          ? '${_pageIndex + 1} / ${pages.length}'
+                          : '本章完',
+                      style: TextStyle(fontSize: 12, color: dim),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '下一页',
+                  onPressed: _pageIndex < pages.length
+                      ? () => _pageCtrl?.nextPage(
+                          duration: const Duration(milliseconds: 260),
+                          curve: Curves.easeOutCubic)
+                      : null,
+                  icon: Icon(Icons.chevron_right, color: dim),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
   Widget _readerBody(ChapterText ch, SettingsStore s) {
     return SelectionArea(
       onSelectionChanged: (c) {
@@ -869,16 +1017,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ],
         );
       },
-      child: Scrollbar(
-        controller: _scroll,
-        child: ListView.builder(
-          controller: _scroll,
-          padding: EdgeInsets.symmetric(horizontal: s.pageMargin, vertical: 20),
-          itemCount: ch.paragraphs.length + 1,
-          itemBuilder: (_, i) =>
-              i < ch.paragraphs.length ? _paragraph(ch, i, s) : _chapterEnd(),
-        ),
-      ),
+      child: widget.settings.readingMode == 'page'
+          ? _pagedBody(ch, s)
+          : Scrollbar(
+              controller: _scroll,
+              child: ListView.builder(
+                controller: _scroll,
+                padding: EdgeInsets.symmetric(
+                    horizontal: s.pageMargin, vertical: 20),
+                itemCount: ch.paragraphs.length + 1,
+                itemBuilder: (_, i) => i < ch.paragraphs.length
+                    ? _paragraph(ch, i, s)
+                    : _chapterEnd(),
+              ),
+            ),
     );
   }
 
@@ -931,42 +1083,109 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
-  /// 句级高亮渲染：把段落文本按高亮范围切成 TextSpan。
-  Widget _richText(String text, List<Highlight> ranges, TextStyle style) {
-    final marks = ranges
-        .where((h) => h.start != null && h.start! < text.length)
-        .map((h) => (
-              h.start!.clamp(0, text.length),
-              h.end!.clamp(0, text.length),
-              h.colorIndex
-            ))
-        .toList()
-      ..sort((a, b) => a.$1.compareTo(b.$1));
-    final spans = <TextSpan>[];
-    var pos = 0;
-    for (final m in marks) {
-      final start = m.$1 < pos ? pos : m.$1;
-      final end = m.$2;
-      if (end <= pos) continue;
-      if (start > pos) spans.add(TextSpan(text: text.substring(pos, start)));
-      spans.add(TextSpan(
-          text: text.substring(start, end),
-          style: TextStyle(
-              backgroundColor:
-                  highlightColors[m.$3 % highlightColors.length])));
-      pos = end;
+  /// 富文本渲染：把粗体 / 斜体 / 句级高亮范围合成分段 TextSpan。
+  /// 范围均为该 text 内的半开区间；hls 为 (start, end, colorIndex)。
+  Widget _spansText(
+    String text, {
+    required TextStyle style,
+    List<(int, int)> bold = const [],
+    List<(int, int)> italic = const [],
+    List<(int, int, int)> hls = const [],
+  }) {
+    if (bold.isEmpty && italic.isEmpty && hls.isEmpty) {
+      return Text(text, style: style);
     }
-    if (pos < text.length) spans.add(TextSpan(text: text.substring(pos)));
+    final n = text.length;
+    final cuts = <int>{0, n};
+    for (final r in bold) {
+      cuts.addAll([r.$1.clamp(0, n), r.$2.clamp(0, n)]);
+    }
+    for (final r in italic) {
+      cuts.addAll([r.$1.clamp(0, n), r.$2.clamp(0, n)]);
+    }
+    for (final r in hls) {
+      cuts.addAll([r.$1.clamp(0, n), r.$2.clamp(0, n)]);
+    }
+    final points = cuts.toList()..sort();
+    final spans = <TextSpan>[];
+    for (var k = 0; k + 1 < points.length; k++) {
+      final a = points[k], b = points[k + 1];
+      if (b <= a) continue;
+      final isBold = bold.any((r) => r.$1 <= a && b <= r.$2);
+      final isItalic = italic.any((r) => r.$1 <= a && b <= r.$2);
+      final hl = hls.where((r) => r.$1 <= a && b <= r.$2).firstOrNull;
+      spans.add(TextSpan(
+        text: text.substring(a, b),
+        style: TextStyle(
+          fontWeight: isBold ? FontWeight.w600 : null, // 中文加粗上限 600
+          fontStyle: isItalic ? FontStyle.italic : null,
+          backgroundColor: hl != null
+              ? highlightColors[hl.$3 % highlightColors.length]
+              : null,
+        ),
+      ));
+    }
     return Text.rich(TextSpan(style: style, children: spans));
   }
 
-  Widget _paragraph(ChapterText ch, int i, SettingsStore s) {
+  /// 渲染一个段落块；[subStart]/[subEnd] 用于翻页模式的跨页切片。
+  Widget _paragraph(ChapterText ch, int i, SettingsStore s,
+      {int subStart = 0, int? subEnd}) {
+    final block = i < ch.blocks.length
+        ? ch.blocks[i]
+        : ParaBlock(text: ch.paragraphs[i]);
+
+    // 书内插图
+    if (block.kind == ParaKind.image) {
+      final name = block.image?.split('/').last.toLowerCase();
+      final bytes = name == null ? null : _content?.images[name];
+      if (bytes == null) return const SizedBox.shrink();
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Center(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.memory(bytes,
+                fit: BoxFit.contain,
+                // 翻页模式按占位高度约束，滚动模式给上限
+                height: 320,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink()),
+          ),
+        ),
+      );
+    }
+
+    final fullText = block.text;
+    final sliceEnd = (subEnd ?? fullText.length).clamp(0, fullText.length);
+    final sliceStart = subStart.clamp(0, sliceEnd);
+    final isFullPara = sliceStart == 0 && sliceEnd == fullText.length;
+    final text = fullText.substring(sliceStart, sliceEnd);
+
+    List<(int, int)> clip(List<(int, int)> rs) => [
+          for (final r in rs)
+            if (r.$2 > sliceStart && r.$1 < sliceEnd)
+              (
+                (r.$1 - sliceStart).clamp(0, text.length),
+                (r.$2 - sliceStart).clamp(0, text.length)
+              )
+        ];
+
     final allHls = _highlightsAt(i);
     final hl = allHls.where((h) => !h.isRange).firstOrNull; // 整段高亮（旧数据）
-    final rangeHls = allHls.where((h) => h.isRange).toList(); // 句级高亮
-    final hasExplain = _explanationsAt(i).isNotEmpty;
-    final hasNote = _notesAt(i).isNotEmpty;
-    final translated = _translation.of(_chapterIndex, i);
+    final rangeHls = [
+      for (final h in allHls.where((h) => h.isRange))
+        if (h.end! > sliceStart && h.start! < sliceEnd)
+          (
+            (h.start! - sliceStart).clamp(0, text.length),
+            (h.end! - sliceStart).clamp(0, text.length),
+            h.colorIndex
+          )
+    ];
+    final boldRs = clip(block.bold);
+    final italicRs = clip(block.italic);
+    final hasExplain = isFullPara && _explanationsAt(i).isNotEmpty;
+    final hasNote = isFullPara && _notesAt(i).isNotEmpty;
+    final translated = isFullPara ? _translation.of(_chapterIndex, i) : null;
 
     // 正文用衬线字体（书感）；系统无宋体时逐级回退
     const serifFallback = [
@@ -977,12 +1196,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
       'serif',
     ];
     final paperFg = _paper.fg;
+    // 标题分级：字号增量与字重同 paginator._styleFor 保持一致（分页测量依赖）
+    final (sizeDelta, weight, height) = switch (block.kind) {
+      ParaKind.h1 => (8.0, FontWeight.w600, 1.4),
+      ParaKind.h2 => (5.0, FontWeight.w600, 1.4),
+      ParaKind.h3 => (3.0, FontWeight.w600, 1.4),
+      _ => (0.0, FontWeight.w400, s.lineHeight),
+    };
     final baseStyle = TextStyle(
-      fontSize: s.fontSize,
-      height: s.lineHeight,
+      fontSize: s.fontSize + sizeDelta,
+      height: height,
+      fontWeight: weight,
       fontFamilyFallback: serifFallback,
       letterSpacing: 0.2,
-      color: paperFg,
+      color: block.kind == ParaKind.quote
+          ? paperFg?.withValues(alpha: .78)
+          : paperFg,
     );
     final dimStyle = TextStyle(
       fontSize: s.fontSize - 1,
@@ -992,10 +1221,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
           Theme.of(context).colorScheme.outline,
     );
 
-    // 原文渲染：有句级高亮时用富文本按范围着色
-    Widget original(TextStyle style) => rangeHls.isEmpty
-        ? Text(ch.paragraphs[i], style: style)
-        : _richText(ch.paragraphs[i], rangeHls, style);
+    // 原文渲染：粗斜体 + 句级高亮合成
+    Widget original(TextStyle style) => _spansText(text,
+        style: style, bold: boldRs, italic: italicRs, hls: rangeHls);
 
     Widget body;
     switch (_mode) {
@@ -1016,6 +1244,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ],
           ],
         );
+    }
+
+    // 引用块：左侧竖线 + 缩进（对齐主流阅读器的 blockquote 处理）
+    if (block.kind == ParaKind.quote) {
+      body = Container(
+        padding: const EdgeInsets.fromLTRB(14, 2, 0, 2),
+        decoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(
+              color: (paperFg ?? Theme.of(context).colorScheme.outline)
+                  .withValues(alpha: .35),
+              width: 3,
+            ),
+          ),
+        ),
+        child: body,
+      );
     }
 
     return Padding(

@@ -110,7 +110,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                             const Text('林间阅读',
                                 style: TextStyle(
                                     fontSize: 34,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w600,
                                     fontFamilyFallback: serif)),
                             const SizedBox(height: 12),
                             Text('读到看不懂的地方，\nAI 用你熟悉的生活经验讲给你听。',
@@ -148,7 +148,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           children: [
                             const Text('先认识一下你',
                                 style: TextStyle(
-                                    fontSize: 24, fontWeight: FontWeight.w700)),
+                                    fontSize: 24, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 8),
                             Text('AI 会用贴合你职业和爱好的例子来解释概念——\n填得越真，例子越像给你量身讲的。',
                                 style: TextStyle(
@@ -183,7 +183,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                           children: [
                             const Text('接入 AI',
                                 style: TextStyle(
-                                    fontSize: 24, fontWeight: FontWeight.w700)),
+                                    fontSize: 24, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 20),
                             if (_aiResult == null)
                               Row(children: [
