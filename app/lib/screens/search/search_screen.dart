@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../../services/book_source.dart';
 import '../../services/library_store.dart';
 import '../../services/proxy_http.dart';
+import '../../services/s2t_map.dart';
 import '../../services/settings_store.dart';
 
 /// 公版书搜索页（A2/A3）。
@@ -31,6 +32,9 @@ class _SearchScreenState extends State<SearchScreen> {
   List<BookSource> _activeSources = [];
   String? _usedProxy;
   bool _searching = false;
+  bool _searched = false; // 已完成过一次搜索（区分「未搜索」与「无结果」）
+  String? _convertedQuery; // 非空 = 本次结果来自自动繁体转换
+  String _lastQuery = '';
   String? _error;
   final Set<String> _downloading = {};
 
@@ -68,6 +72,18 @@ class _SearchScreenState extends State<SearchScreen> {
     return all;
   }
 
+  /// 搜索 + 简繁回退：Gutenberg 中文书名均为繁体，简体 0 结果时自动转繁体重试。
+  /// 返回 (结果, 实际生效的繁体查询或 null)。
+  Future<(List<BookSearchResult>, String?)> _searchWithFallback(
+      List<BookSource> sources, String q) async {
+    final all = await _searchAll(sources, q);
+    if (all.isNotEmpty) return (all, null);
+    final trad = toTraditional(q);
+    if (trad == q) return (all, null);
+    final retried = await _searchAll(sources, trad);
+    return (retried, retried.isNotEmpty ? trad : null);
+  }
+
   Future<void> _search() async {
     final q = _query.text.trim();
     if (q.isEmpty) return;
@@ -76,15 +92,19 @@ class _SearchScreenState extends State<SearchScreen> {
       _error = null;
       _results = [];
       _usedProxy = null;
+      _convertedQuery = null;
+      _lastQuery = q;
     });
 
     // 测试注入路径：只用注入源直连
     if (widget.sources != null) {
       try {
-        final all = await _searchAll(widget.sources!, q);
+        final (all, converted) = await _searchWithFallback(widget.sources!, q);
         setState(() {
           _results = all;
+          _convertedQuery = converted;
           _activeSources = widget.sources!;
+          _searched = true;
         });
       } catch (e) {
         setState(() => _error = '$e');
@@ -108,12 +128,14 @@ class _SearchScreenState extends State<SearchScreen> {
       final client = proxy == null ? null : clientViaProxy(proxy);
       final sources = _buildSources(client);
       try {
-        final all = await _searchAll(sources, q);
+        final (all, converted) = await _searchWithFallback(sources, q);
         setState(() {
           _results = all;
+          _convertedQuery = converted;
           _activeSources = sources;
           _usedProxy = proxy;
           _searching = false;
+          _searched = true;
         });
         return;
       } catch (e) {
@@ -164,7 +186,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: TextField(
                     controller: _query,
                     decoration: const InputDecoration(
-                      hintText: '书名或作者（如：吶喊 / Adam Smith）',
+                      hintText: '书名或作者（如：呐喊 / Adam Smith）',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -197,6 +219,25 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             ),
           ),
+          if (_convertedQuery != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  Icon(Icons.translate,
+                      size: 14, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '「$_lastQuery」没有直接命中，已自动按繁体「$_convertedQuery」搜索（Gutenberg 中文书名均为繁体）',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 4),
           if (_error != null)
             Expanded(
@@ -208,13 +249,30 @@ class _SearchScreenState extends State<SearchScreen> {
                         color: Theme.of(context).colorScheme.error)),
               ),
             )
+          else if (_searching)
+            const Expanded(
+                child: Center(child: CircularProgressIndicator(strokeWidth: 3)))
           else
             Expanded(
-              child: _results.isEmpty && !_searching
+              child: _results.isEmpty
                   ? Center(
-                      child: Text('输入书名开始搜索公版书',
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          !_searched
+                              ? '输入书名开始搜索公版书'
+                              : '没有找到「$_lastQuery」\n\n'
+                                  '· 已自动尝试繁体书名（Gutenberg 中文书均为繁体，如《吶喊》）\n'
+                                  '· 可试作者名（如：鲁迅 → Lu Xun）或英文书名\n'
+                                  '· 公版库以 1929 年前的作品为主，较新的书搜不到属正常',
+                          textAlign:
+                              !_searched ? TextAlign.center : TextAlign.left,
                           style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline)))
+                              height: 1.8,
+                              color: Theme.of(context).colorScheme.outline),
+                        ),
+                      ),
+                    )
                   : ListView.separated(
                       padding: const EdgeInsets.all(12),
                       itemCount: _results.length,

@@ -60,7 +60,8 @@ jobs:
       - name: 打包 zip
         run: |
           cd build/macos/Build/Products/Release
-          ditto -c -k --sequesterRsrc --keepParent *.app linjian-reader-macos.zip
+          mv *.app 林间阅读.app
+          ditto -c -k --sequesterRsrc --keepParent 林间阅读.app linjian-reader-macos.zip
           mv linjian-reader-macos.zip $GITHUB_WORKSPACE/
 
       - uses: actions/upload-artifact@v4
@@ -75,7 +76,7 @@ jobs:
           files: linjian-reader-macos.zip
           body: |
             ⚠️ 未签名构建：首次打开请「右键 → 打开」；若提示已损坏，终端执行
-            `xattr -cr /Applications/ai_reader.app`（路径按实际调整）。
+            `xattr -cr /Applications/林间阅读.app`（路径按实际调整）。
             使用前请先安装 [Ollama](https://ollama.com) 并执行 `ollama pull qwen2.5:7b`。
 
   android:

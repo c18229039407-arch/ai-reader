@@ -69,7 +69,7 @@ class GutendexSource implements BookSource {
     final uri =
         Uri.parse('$baseUrl/books/?search=${Uri.encodeQueryComponent(query)}'
             '${lang != null ? '&languages=$lang' : ''}');
-    final res = await _http.get(uri).timeout(const Duration(seconds: 15));
+    final res = await _http.get(uri).timeout(const Duration(seconds: 25));
     if (res.statusCode != 200) {
       throw Exception('Gutendex HTTP ${res.statusCode}');
     }
