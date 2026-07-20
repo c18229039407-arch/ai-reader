@@ -108,10 +108,12 @@ jobs:
           dart pub global activate flutter_launcher_icons
           dart pub global run flutter_launcher_icons -f flutter_launcher_icons-android.yaml
 
-      - name: 允许明文流量（连局域网 Ollama）+ 应用名
+      - name: 允许明文流量（连局域网 Ollama）+ 应用名 + 浏览器调起声明
         run: |
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="ai_reader"/android:label="林间阅读"/' android/app/src/main/AndroidManifest.xml || true
+          # url_launcher：Android 11+ 需 queries 声明才能打开 https 链接
+          sed -i 's|<application|<queries><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent></queries><application|' android/app/src/main/AndroidManifest.xml
 
       - name: 构建 APK
         run: flutter build apk --release

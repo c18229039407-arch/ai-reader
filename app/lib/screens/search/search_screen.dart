@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../services/book_source.dart';
+import '../../services/find_online.dart';
 import '../../services/library_store.dart';
 import '../../services/proxy_http.dart';
 import '../../services/s2t_map.dart';
@@ -333,8 +336,8 @@ class _SearchScreenState extends State<SearchScreen> {
                                   '· 英文：约 1929 年以前出版的作品，可试英文书名或作者名\n\n'
                                   '仍在版权保护期的书（近几十年出版的新书、畅销书、教材）\n'
                                   '不存在合法的免费全文来源，任何声称免费提供的站点都是盗版。\n'
-                                  '建议购买正版电子书后，用书架的「导入书籍」阅读——\n'
-                                  'AI 解释、翻译等全部功能对导入的书同样可用。',
+                                  '可用下方入口去站外找这本书，拿到文件后\n'
+                                  '用书架的「导入书籍」阅读——AI 解释、翻译等功能同样可用。',
                           textAlign:
                               !_searched ? TextAlign.center : TextAlign.left,
                           style: TextStyle(
@@ -366,6 +369,44 @@ class _SearchScreenState extends State<SearchScreen> {
                         );
                       },
                     ),
+            ),
+          // A4 中立聚合搜索入口：站外找书，下载在 App 外由用户完成后再导入
+          if (_searched && !_searching && _error == null)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+              decoration: BoxDecoration(
+                border: Border(
+                    top: BorderSide(
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                        width: 0.5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('站外找「$_lastQuery」（浏览器打开，下载后可导入书架）',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final link in findOnlineLinks(_lastQuery))
+                        Tooltip(
+                          message: link.hint,
+                          child: ActionChip(
+                            avatar: const Icon(Icons.open_in_new, size: 15),
+                            label: Text(link.label),
+                            onPressed: () => launchUrl(link.uri,
+                                mode: LaunchMode.externalApplication),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
         ],
       ),
