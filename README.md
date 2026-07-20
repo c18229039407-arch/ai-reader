@@ -1,3 +1,5 @@
+<p align="center"><img src="app/assets/icon/logo.png" width="108" alt="林间阅读"></p>
+
 # 林间阅读
 
 [![CI](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/c18229039407-arch/ai-reader/actions/workflows/ci.yml)

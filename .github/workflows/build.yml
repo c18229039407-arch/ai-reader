@@ -27,6 +27,11 @@ jobs:
       - name: 生成 macOS 平台工程
         run: flutter create --platforms=macos --project-name ai_reader .
 
+      - name: 生成应用图标
+        run: |
+          dart pub global activate flutter_launcher_icons
+          dart pub global run flutter_launcher_icons
+
       - name: 放开沙盒网络与文件权限（entitlements）
         run: |
           python3 - <<'EOF'
@@ -94,6 +99,11 @@ jobs:
 
       - name: 生成 Android 平台工程
         run: flutter create --platforms=android --project-name ai_reader .
+
+      - name: 生成应用图标
+        run: |
+          dart pub global activate flutter_launcher_icons
+          dart pub global run flutter_launcher_icons
 
       - name: 允许明文流量（连局域网 Ollama）+ 应用名
         run: |

@@ -101,8 +101,11 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.forest_outlined,
-                                size: 72, color: scheme.primary),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(22),
+                              child: Image.asset('assets/icon/logo.png',
+                                  width: 96, height: 96),
+                            ),
                             const SizedBox(height: 24),
                             const Text('林间阅读',
                                 style: TextStyle(
