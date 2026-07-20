@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:ai_reader/services/book_source.dart';
+import 'package:ai_reader/services/epub_loader.dart';
 import 'package:ai_reader/services/s2t_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,6 +34,32 @@ void main() {
     // ignore: avoid_print
     print('✓ 「呐喊」→ 繁体回退 → ${results.length} 条：${results.first.title}（${results.first.author}）');
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('真实维基文库：简体「骆驼祥子」命中近现代作品并可下载 EPUB', () async {
+    if (!enabled) {
+      markTestSkipped('设 E2E=1 才执行（需要外网）');
+      return;
+    }
+    final source = WikisourceZhSource();
+    final results = await source.search('骆驼祥子');
+    expect(results, isNotEmpty, reason: '老舍 1966 年逝世，其作品在中国已入公有领域');
+    final main = results.firstWhere((r) => r.title == '駱駝祥子');
+
+    final bytes = await source.download(main);
+    expect(bytes.length, greaterThan(10 * 1024));
+    expect(bytes[0], 0x50); // 'P'
+    expect(bytes[1], 0x4B); // 'K' — EPUB(zip) 魔数
+
+    // 阅读器真能打开：epubx 解析出章节与正文
+    final loaded = await loadEpub(bytes);
+    expect(loaded.chapters, isNotEmpty, reason: '下载的 EPUB 必须能被阅读器解析');
+    final totalChars = loaded.chapters
+        .fold<int>(0, (n, c) => n + c.paragraphs.join().length);
+    expect(totalChars, greaterThan(1000));
+    // ignore: avoid_print
+    print('✓ 维基文库「骆驼祥子」→ ${results.length} 条，EPUB ${bytes.length ~/ 1024}KB，'
+        '解析 ${loaded.chapters.length} 章 / $totalChars 字');
+  }, timeout: const Timeout(Duration(minutes: 4)));
 
   test('真实 Gutendex：英文作者 Adam Smith 直接命中', () async {
     if (!enabled) {

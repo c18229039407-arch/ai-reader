@@ -112,5 +112,81 @@ class GutendexSource implements BookSource {
   }
 }
 
+/// 中文维基文库（Wikisource zh）——公有领域/自由许可作品。
+/// 重要价值：中国版权法下作者逝世满 50 年即入公有领域，
+/// 因此鲁迅、朱自清、老舍等近现代作品在此可合法获取（Gutenberg 只到 1929）。
+/// 下载走 Wikisource 官方 WSExport 服务，现场生成 EPUB（自动合并子页/章节）。
+class WikisourceZhSource implements BookSource {
+  WikisourceZhSource({
+    http.Client? client,
+    this.apiBase = 'https://zh.wikisource.org/w/api.php',
+    this.exportBase = 'https://ws-export.wmcloud.org',
+  }) : _http = client ?? http.Client();
+
+  final http.Client _http;
+  final String apiBase;
+  final String exportBase;
+
+  @override
+  String get id => 'wikisource-zh';
+
+  @override
+  String get displayName => '中文维基文库';
+
+  @override
+  String get licenseNote => '公有领域或自由许可作品，含已过版权期的近现代中文著作';
+
+  @override
+  Future<List<BookSearchResult>> search(String query, {String? lang}) async {
+    final uri = Uri.parse(
+        '$apiBase?action=query&list=search&format=json&srlimit=20&srnamespace=0'
+        '&srsearch=${Uri.encodeQueryComponent(query)}');
+    final res = await _http.get(uri).timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) {
+      throw Exception('Wikisource HTTP ${res.statusCode}');
+    }
+    final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    final hits =
+        ((data['query'] as Map?)?['search'] as List? ?? []).cast<Map>();
+
+    // 章节以子页存在（如「駱駝祥子/2」）——归并到主标题并去重
+    final seen = <String>{};
+    final results = <BookSearchResult>[];
+    for (final h in hits) {
+      final full = h['title']?.toString() ?? '';
+      if (full.isEmpty) continue;
+      final base = full.split('/').first;
+      if (!seen.add(base)) continue;
+      results.add(BookSearchResult(
+        sourceId: id,
+        title: base,
+        author: '维基文库（作者见书内）',
+        lang: 'zh',
+        downloadUrl:
+            '$exportBase/?format=epub&lang=zh&page=${Uri.encodeQueryComponent(base)}',
+      ));
+    }
+    return results;
+  }
+
+  @override
+  Future<Uint8List> download(BookSearchResult item) async {
+    // WSExport 现场生成 EPUB，可能较慢
+    final res = await _http
+        .get(Uri.parse(item.downloadUrl))
+        .timeout(const Duration(minutes: 3));
+    if (res.statusCode != 200) {
+      throw Exception('下载失败 HTTP ${res.statusCode}');
+    }
+    // EPUB 是 zip：校验魔数，避免把报错页当书存下
+    if (res.bodyBytes.length < 4 ||
+        res.bodyBytes[0] != 0x50 ||
+        res.bodyBytes[1] != 0x4B) {
+      throw Exception('导出服务返回的不是有效 EPUB，请稍后重试');
+    }
+    return res.bodyBytes;
+  }
+}
+
 /// 随包默认数据源注册表——仅合法源（可插拔机制的 MVP 形态）。
-final List<BookSource> defaultSources = [GutendexSource()];
+final List<BookSource> defaultSources = [GutendexSource(), WikisourceZhSource()];

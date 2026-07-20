@@ -98,7 +98,9 @@ void main() {
 
       expect(find.text('输入书名开始搜索公版书'), findsNothing);
       expect(find.textContaining('没有找到「不存在的书名xyz」'), findsOneWidget);
-      expect(find.textContaining('繁体'), findsOneWidget);
+      // 文案必须解释「为什么搜不到」：版权边界 + 正版导入的出路
+      expect(find.textContaining('版权'), findsOneWidget);
+      expect(find.textContaining('导入书籍'), findsOneWidget);
     });
   });
 }

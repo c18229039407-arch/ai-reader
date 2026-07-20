@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -35,6 +37,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searched = false; // 已完成过一次搜索（区分「未搜索」与「无结果」）
   String? _convertedQuery; // 非空 = 本次结果来自自动繁体转换
   String _lastQuery = '';
+  List<String> _failedNames = []; // 本轮连不上的书源（结果可能不完整）
   String? _error;
   final Set<String> _downloading = {};
 
@@ -42,6 +45,7 @@ class _SearchScreenState extends State<SearchScreen> {
     final s = widget.settings;
     return [
       GutendexSource(client: client),
+      WikisourceZhSource(client: client),
       if (s != null)
         ...s.customSourceUrls.asMap().entries.map(
               (e) => GutendexSource(
@@ -84,6 +88,47 @@ class _SearchScreenState extends State<SearchScreen> {
     return (retried, retried.isNotEmpty ? trad : null);
   }
 
+  /// 单个书源的连通竞速：直连与各代理并行发起，最先成功者胜出。
+  /// 全部失败返回 null（错误收集到 [errors]）。
+  Future<_SourceResult?> _raceAttempts(
+    BookSource Function(http.Client?) build,
+    String q,
+    List<String?> attempts,
+    List<Object> errors,
+  ) {
+    final completer = Completer<_SourceResult?>();
+    var pending = attempts.length;
+    for (final proxy in attempts) {
+      () async {
+        try {
+          final src = build(proxy == null ? null : clientViaProxy(proxy));
+          final r = await src.search(q);
+          if (!completer.isCompleted) {
+            completer.complete(_SourceResult(src, r, proxy));
+          }
+        } catch (e) {
+          errors.add(e);
+        } finally {
+          pending -= 1;
+          if (pending == 0 && !completer.isCompleted) completer.complete(null);
+        }
+      }();
+    }
+    return completer.future;
+  }
+
+  /// 所有书源并行搜索（每源独立代理竞速——境内可达性各不相同）。
+  Future<(List<_SourceResult?>, List<Object>)> _searchOnce(
+      String q, List<String?> attempts) async {
+    final errors = <Object>[];
+    final count = _buildSources(null).length;
+    final outcomes = await Future.wait(List.generate(
+        count,
+        (i) => _raceAttempts(
+            (client) => _buildSources(client)[i], q, attempts, errors)));
+    return (outcomes, errors);
+  }
+
   Future<void> _search() async {
     final q = _query.text.trim();
     if (q.isEmpty) return;
@@ -93,6 +138,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _results = [];
       _usedProxy = null;
       _convertedQuery = null;
+      _failedNames = [];
       _lastQuery = q;
     });
 
@@ -114,7 +160,7 @@ class _SearchScreenState extends State<SearchScreen> {
       return;
     }
 
-    // 直连 → 自动代理探测
+    // 直连 → 自动代理探测（每个书源独立竞速，境内外可达性不同）
     final cfg = widget.settings?.proxyAddress ?? 'auto';
     final attempts = <String?>[null];
     if (cfg == 'auto') {
@@ -123,32 +169,51 @@ class _SearchScreenState extends State<SearchScreen> {
       attempts.add(cfg);
     }
 
-    Object? lastError;
-    for (final proxy in attempts) {
-      final client = proxy == null ? null : clientViaProxy(proxy);
-      final sources = _buildSources(client);
-      try {
-        final (all, converted) = await _searchWithFallback(sources, q);
-        setState(() {
-          _results = all;
-          _convertedQuery = converted;
-          _activeSources = sources;
-          _usedProxy = proxy;
-          _searching = false;
-          _searched = true;
-        });
-        return;
-      } catch (e) {
-        lastError = e;
+    var (outcomes, errors) = await _searchOnce(q, attempts);
+    var ok = outcomes.whereType<_SourceResult>().toList();
+    var all = ok.expand((o) => o.results).toList();
+    String? converted;
+
+    // 简繁回退：有源可达但 0 结果时，转繁体再来一轮
+    if (ok.isNotEmpty && all.isEmpty) {
+      final trad = toTraditional(q);
+      if (trad != q) {
+        final (o2, _) = await _searchOnce(trad, attempts);
+        final ok2 = o2.whereType<_SourceResult>().toList();
+        final all2 = ok2.expand((o) => o.results).toList();
+        if (all2.isNotEmpty) {
+          ok = ok2;
+          all = all2;
+          converted = trad;
+        }
       }
     }
 
+    if (!mounted) return;
+    if (ok.isEmpty) {
+      setState(() {
+        _searching = false;
+        _error =
+            '直连与本机常见代理端口（${commonLocalProxies.map((p) => p.split(':').last).join('/')}）都试过了，仍无法连上任何书源。\n\n'
+            '若你的代理端口不是常见端口，请到「设置 → 书源代理」填写 host:port；'
+            '或先用「导入书籍」读自己的文件。\n\n技术信息：${errors.isEmpty ? '无' : errors.last}';
+      });
+      return;
+    }
+
+    final okNames = ok.map((o) => o.source.displayName).toSet();
     setState(() {
+      _results = all;
+      _convertedQuery = converted;
+      _activeSources = ok.map((o) => o.source).toList();
+      _usedProxy =
+          ok.map((o) => o.proxy).firstWhere((p) => p != null, orElse: () => null);
+      _failedNames = _buildSources(null)
+          .map((s) => s.displayName)
+          .where((n) => !okNames.contains(n))
+          .toList();
       _searching = false;
-      _error =
-          '直连与本机常见代理端口（${commonLocalProxies.map((p) => p.split(':').last).join('/')}）都试过了，仍无法连上公版书源。\n\n'
-          '若你的代理端口不是常见端口，请到「设置 → 书源代理」填写 host:port；'
-          '或先用「导入书籍」读自己的文件。\n\n技术信息：$lastError';
+      _searched = true;
     });
   }
 
@@ -186,7 +251,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   child: TextField(
                     controller: _query,
                     decoration: const InputDecoration(
-                      hintText: '书名或作者（如：呐喊 / Adam Smith）',
+                      hintText: '书名或作者（如：呐喊 / 骆驼祥子 / Adam Smith）',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
@@ -210,7 +275,8 @@ class _SearchScreenState extends State<SearchScreen> {
                 Expanded(
                   child: Text(
                     '数据源：${infoSources.map((s) => '${s.displayName}（${s.licenseNote}）').join('；')}'
-                    '${_usedProxy != null ? ' · 已通过本机代理 $_usedProxy 连接' : ''}',
+                    '${_usedProxy != null ? ' · 已通过本机代理 $_usedProxy 连接' : ''}'
+                    '${_failedNames.isNotEmpty ? ' · ⚠ ${_failedNames.join('、')}暂时连不上，结果可能不完整' : ''}',
                     style: TextStyle(
                         fontSize: 12,
                         color: Theme.of(context).colorScheme.outline),
@@ -262,9 +328,13 @@ class _SearchScreenState extends State<SearchScreen> {
                           !_searched
                               ? '输入书名开始搜索公版书'
                               : '没有找到「$_lastQuery」\n\n'
-                                  '· 已自动尝试繁体书名（Gutenberg 中文书均为繁体，如《吶喊》）\n'
-                                  '· 可试作者名（如：鲁迅 → Lu Xun）或英文书名\n'
-                                  '· 公版库以 1929 年前的作品为主，较新的书搜不到属正常',
+                                  '这里只能搜到公版书——版权已过期、可合法免费下载全文的书：\n'
+                                  '· 中文：作者逝世满 50 年即公版，鲁迅、朱自清、老舍等近现代作品可搜\n'
+                                  '· 英文：约 1929 年以前出版的作品，可试英文书名或作者名\n\n'
+                                  '仍在版权保护期的书（近几十年出版的新书、畅销书、教材）\n'
+                                  '不存在合法的免费全文来源，任何声称免费提供的站点都是盗版。\n'
+                                  '建议购买正版电子书后，用书架的「导入书籍」阅读——\n'
+                                  'AI 解释、翻译等全部功能对导入的书同样可用。',
                           textAlign:
                               !_searched ? TextAlign.center : TextAlign.left,
                           style: TextStyle(
@@ -301,4 +371,13 @@ class _SearchScreenState extends State<SearchScreen> {
       ),
     );
   }
+}
+
+/// 单个书源一轮搜索的胜出结果：源实例（带可用连接）+ 结果 + 所用代理。
+class _SourceResult {
+  _SourceResult(this.source, this.results, this.proxy);
+
+  final BookSource source;
+  final List<BookSearchResult> results;
+  final String? proxy;
 }
