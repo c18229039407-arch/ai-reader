@@ -12,10 +12,13 @@ import '../../services/ollama_client.dart';
 import '../../services/paginator.dart';
 import '../../services/settings_store.dart';
 import '../../services/translation_store.dart';
+import '../../services/tts_service.dart';
 import 'annotations_screen.dart';
+import 'assistant_panel.dart';
 import 'concepts_screen.dart';
 import 'explain_panel.dart';
 import 'reader_papers.dart';
+import 'share_card.dart';
 import 'search_in_book_screen.dart';
 
 /// 高亮色板（C5）。
@@ -71,11 +74,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ? _content!.chapters[_chapterIndex]
           : null;
 
+  Timer? _statsTimer;
+  final TtsService _tts = TtsService();
+
   @override
   void initState() {
     super.initState();
     _load();
     _scroll.addListener(_onScroll);
+    // 朗读到某段时高亮该段
+    _tts.currentPara.addListener(() {
+      if (mounted) setState(() {});
+    });
+    // 每 30 秒累计一次阅读时长（仅前台；退出时结算尾数）
+    _statsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      widget.store.stats.addSeconds(widget.book.id, 30);
+    });
   }
 
   Future<void> _load() async {
@@ -144,6 +158,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   void dispose() {
     _saveDebounce?.cancel();
     _saveProgress();
+    _statsTimer?.cancel();
+    _tts.dispose();
     _batch?.pause();
     _scroll.dispose();
     _pageCtrl?.dispose();
@@ -230,6 +246,62 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
     if (s.model.isEmpty) return null;
     return ExplainService(client: OllamaClient(s.ollamaUrl), model: s.model);
+  }
+
+  /// AI 客户端 + 模型名（用于助读对话）；未配置返回 null。
+  (LlmClient, String)? _llm() {
+    final s = widget.settings;
+    if (!s.aiEnabled) return null;
+    if (s.providerType == 'openai') {
+      if (s.openaiApiKey.isEmpty || s.openaiModel.isEmpty) return null;
+      return (
+        OpenAiCompatClient(baseUrl: s.openaiBaseUrl, apiKey: s.openaiApiKey),
+        s.openaiModel
+      );
+    }
+    if (s.model.isEmpty) return null;
+    return (OllamaClient(s.ollamaUrl), s.model);
+  }
+
+  void _openAssistant() {
+    final content = _content;
+    if (content == null) return;
+    final llm = _llm();
+    if (llm == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('尚未配置 AI，请到设置里接入本机模型或填 API Key')));
+      return;
+    }
+    final ch = _chapter;
+    // 当前位置附近的正文（前后几段）作为语境
+    final around = ch == null
+        ? ''
+        : ch.paragraphs
+            .skip((_anchorPara - 1).clamp(0, ch.paragraphs.length))
+            .take(5)
+            .join('\n');
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        expand: false,
+        builder: (_, controller) => Padding(
+          padding: MediaQuery.of(context).viewInsets,
+          child: AssistantPanel(
+            client: llm.$1,
+            model: llm.$2,
+            bookTitle: content.title,
+            author: content.author,
+            currentChapter: ch?.title ?? '',
+            currentExcerpt: around,
+            profile: widget.settings.profile,
+          ),
+        ),
+      ),
+    );
   }
 
   void _runAi({required bool translate}) {
@@ -596,6 +668,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
             )),
           ),
+          ValueListenableBuilder<bool>(
+            valueListenable: _tts.playing,
+            builder: (_, playing, __) => IconButton(
+              tooltip: '朗读',
+              icon: Icon(playing ? Icons.headset : Icons.headphones_outlined),
+              onPressed: () => _openTtsSheet(content),
+            ),
+          ),
+          if (widget.settings.aiEnabled)
+            IconButton(
+              tooltip: '问这本书',
+              icon: const Icon(Icons.forum_outlined),
+              onPressed: _openAssistant,
+            ),
           IconButton(
             tooltip: _bookmarkedHere ? '取消书签' : '添加书签',
             icon:
@@ -815,6 +901,286 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   /// 划选后浮出的快捷操作条（比右键菜单更顺手的主路径）。
+  // ---------- TTS 朗读 ----------
+
+  Future<void> _startTts(int fromPara) async {
+    final ch = _chapter;
+    if (ch == null) return;
+    await _tts.start(
+      ch.paragraphs,
+      fromPara,
+      onAdvance: () {
+        // 朗读推进时，若当前段落已滚出视口可自动跟随（滚动模式）
+        if (widget.settings.readingMode != 'page') {
+          final i = _tts.currentPara.value;
+          if (i >= 0 && _scroll.hasClients) {
+            final target = (i * 90.0)
+                .clamp(0.0, _scroll.position.maxScrollExtent);
+            _scroll.animateTo(target,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOut);
+          }
+        }
+      },
+      onChapterEnd: () async {
+        // 读完本章：有下一章则续接
+        final content = _content;
+        if (content != null && _chapterIndex < content.chapters.length - 1) {
+          _goto(_chapterIndex + 1);
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+          _tts.updateParas(_chapter?.paragraphs ?? []);
+          return true;
+        }
+        return false;
+      },
+    );
+  }
+
+  Future<void> _openTtsSheet(LoadedBook content) async {
+    await _tts.init();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text('朗读', style: Theme.of(ctx).textTheme.titleMedium),
+                    const Spacer(),
+                    ValueListenableBuilder<Duration?>(
+                      valueListenable: _tts.sleepRemaining,
+                      builder: (_, r, __) => r == null
+                          ? const SizedBox.shrink()
+                          : Text('定时 ${r.inMinutes}:${(r.inSeconds % 60).toString().padLeft(2, '0')}',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color:
+                                      Theme.of(ctx).colorScheme.primary)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // 播放控制
+                ValueListenableBuilder<bool>(
+                  valueListenable: _tts.playing,
+                  builder: (_, playing, __) => Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton.filledTonal(
+                        iconSize: 32,
+                        icon: Icon(playing
+                            ? Icons.pause
+                            : Icons.play_arrow),
+                        onPressed: () {
+                          if (playing) {
+                            _tts.pause();
+                          } else if (_tts.currentPara.value >= 0) {
+                            _tts.resume();
+                          } else {
+                            // 从当前视口首段开始
+                            final from = widget.settings.readingMode == 'page'
+                                ? _anchorPara
+                                : (_scroll.hasClients
+                                    ? (_scroll.offset / 90.0).floor()
+                                    : 0);
+                            _startTts(from);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 16),
+                      IconButton(
+                        icon: const Icon(Icons.stop),
+                        onPressed: () => _tts.stop(),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 24),
+                // 语速
+                Text('语速', style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                Slider(
+                  value: _tts.rate,
+                  min: 0.2,
+                  max: 1.0,
+                  onChanged: (v) => setSheet(() => _tts.rate = v),
+                  onChangeEnd: (_) => _tts.applyParams(),
+                ),
+                // 音调
+                Text('音调', style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                Slider(
+                  value: _tts.pitch,
+                  min: 0.5,
+                  max: 2.0,
+                  onChanged: (v) => setSheet(() => _tts.pitch = v),
+                  onChangeEnd: (_) => _tts.applyParams(),
+                ),
+                // 音色
+                if (_tts.voices.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('音色', style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    height: 40,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: [
+                        for (final v in _tts.voices
+                            .where((v) => v['locale']!
+                                .toLowerCase()
+                                .startsWith('zh'))
+                            .take(12))
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(v['name']!.split(RegExp(r'[.\-]')).last,
+                                  style: const TextStyle(fontSize: 12)),
+                              selected: _tts.voiceName == v['name'],
+                              onSelected: (_) {
+                                setSheet(() => _tts.voiceName = v['name']);
+                                _tts.applyParams();
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                const Divider(height: 24),
+                // 定时关闭
+                Text('定时关闭', style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final m in [15, 30, 60])
+                      ActionChip(
+                        label: Text('$m 分钟'),
+                        onPressed: () {
+                          _tts.setSleep(minutes: m);
+                          setSheet(() {});
+                        },
+                      ),
+                    ActionChip(
+                      label: const Text('读完本章'),
+                      onPressed: () {
+                        _tts.setSleep(atChapterEnd: true);
+                        setSheet(() {});
+                      },
+                    ),
+                    ActionChip(
+                      label: const Text('取消定时'),
+                      onPressed: () {
+                        _tts.setSleep(minutes: null);
+                        setSheet(() {});
+                      },
+                    ),
+                  ],
+                ),
+                if (_tts.voices.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '未检测到系统语音引擎。macOS 一般自带；Android 需在系统设置里'
+                    '安装 TTS 引擎（如 Google 文字转语音）后重开。',
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).colorScheme.outline,
+                        height: 1.6),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  /// 书摘分享卡片：选主题 → 预览 → 导出 PNG 到下载目录。
+  Future<void> _openShareCard(String quote) async {
+    if (quote.isEmpty) return;
+    final content = _content;
+    final boundaryKey = GlobalKey();
+    var themeIdx = widget.settings.readerTheme.clamp(0, 1) == 0 &&
+            !(_paper.isDark)
+        ? 0
+        : 1;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) {
+        final theme = shareCardThemes[themeIdx];
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('分享书摘', style: Theme.of(ctx).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                // 预览（RepaintBoundary 即导出源）
+                RepaintBoundary(
+                  key: boundaryKey,
+                  child: ShareCard(
+                    quote: quote,
+                    bookTitle: content?.title ?? widget.book.title,
+                    author: content?.author ?? widget.book.author,
+                    theme: theme,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                // 主题选择
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (var i = 0; i < shareCardThemes.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: ChoiceChip(
+                          label: Text(shareCardThemes[i].name),
+                          selected: themeIdx == i,
+                          onSelected: (_) => setSheet(() => themeIdx = i),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  icon: const Icon(Icons.download, size: 18),
+                  label: const Text('保存图片'),
+                  onPressed: () async {
+                    try {
+                      final path = await exportCardPng(
+                          boundaryKey, content?.title ?? widget.book.title);
+                      if (!ctx.mounted) return;
+                      Navigator.pop(ctx);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text('已保存到：$path')));
+                      }
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(content: Text('保存失败：$e')));
+                      }
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
   Widget _selectionBar(BuildContext context) {
     final aiOn = widget.settings.aiEnabled;
     final scheme = Theme.of(context).colorScheme;
@@ -856,6 +1222,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
             setState(() => _selBarVisible = false);
           }),
           action(Icons.sticky_note_2_outlined, '笔记', _addNote),
+          action(Icons.ios_share, '卡片', () {
+            setState(() => _selBarVisible = false);
+            _openShareCard(_selectedText.trim());
+          }),
           IconButton(
             visualDensity: VisualDensity.compact,
             icon: Icon(Icons.close,
@@ -885,6 +1255,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
         height: cons.maxHeight - 72, // 上下留白 + 页码指示
         fontSize: s.fontSize,
         lineHeight: s.lineHeight,
+        letterSpacing: s.letterSpacing,
+        paraSpacing: s.paraSpacing,
       );
       if (_pages == null || _pagesSpec != spec || _pagesChapter != _chapterIndex) {
         _pages = paginateChapter(ch, spec);
@@ -1013,6 +1385,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   _toggleHighlight(0);
                 }),
             ContextMenuButtonItem(label: '笔记', onPressed: _addNote),
+            ContextMenuButtonItem(
+                label: '卡片',
+                onPressed: () {
+                  ContextMenuController.removeAny();
+                  _openShareCard(_selectedText.trim());
+                }),
             ...state.contextMenuButtonItems,
           ],
         );
@@ -1208,11 +1586,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
       height: height,
       fontWeight: weight,
       fontFamilyFallback: serifFallback,
-      letterSpacing: 0.2,
+      letterSpacing: s.letterSpacing,
       color: block.kind == ParaKind.quote
           ? paperFg?.withValues(alpha: .78)
           : paperFg,
     );
+    // 中文正文首行缩进两字（标题/引用/图不缩进）
+    final indent = (s.firstLineIndent &&
+            block.kind == ParaKind.body &&
+            isFullPara &&
+            RegExp(r'^[一-鿿]').hasMatch(text))
+        ? '　　'
+        : '';
     final dimStyle = TextStyle(
       fontSize: s.fontSize - 1,
       height: s.lineHeight,
@@ -1222,8 +1607,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
 
     // 原文渲染：粗斜体 + 句级高亮合成
-    Widget original(TextStyle style) => _spansText(text,
-        style: style, bold: boldRs, italic: italicRs, hls: rangeHls);
+    final shift = indent.length;
+    List<(int, int)> off2(List<(int, int)> rs) =>
+        shift == 0 ? rs : [for (final r in rs) (r.$1 + shift, r.$2 + shift)];
+    List<(int, int, int)> off3(List<(int, int, int)> rs) => shift == 0
+        ? rs
+        : [for (final r in rs) (r.$1 + shift, r.$2 + shift, r.$3)];
+    Widget original(TextStyle style) => _spansText(indent + text,
+        style: style,
+        bold: off2(boldRs),
+        italic: off2(italicRs),
+        hls: off3(rangeHls));
 
     Widget body;
     switch (_mode) {
@@ -1263,15 +1657,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
       );
     }
 
+    // 朗读到本段：整段浅色底提示
+    final isReading = isFullPara && _tts.currentPara.value == i;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: EdgeInsets.only(bottom: s.paraSpacing),
       child: Container(
         decoration: hl != null
             ? BoxDecoration(
                 color: highlightColors[hl.colorIndex % highlightColors.length],
                 borderRadius: BorderRadius.circular(4))
+            : (isReading
+                ? BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(4))
+                : null),
+        padding: (hl != null || isReading)
+            ? const EdgeInsets.symmetric(horizontal: 4, vertical: 2)
             : null,
-        padding: hl != null ? const EdgeInsets.symmetric(horizontal: 4) : null,
         child: (hasExplain || hasNote)
             ? Wrap(
                 crossAxisAlignment: WrapCrossAlignment.end,
@@ -1393,6 +1798,51 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     ),
                   ),
                 ]),
+                Row(children: [
+                  const SizedBox(width: 72, child: Text('字间距')),
+                  Expanded(
+                    child: Slider(
+                      value: s.letterSpacing,
+                      min: 0,
+                      max: 3,
+                      divisions: 15,
+                      label: s.letterSpacing.toStringAsFixed(1),
+                      onChanged: (v) {
+                        s.letterSpacing = v;
+                        setSheet(() {});
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ]),
+                Row(children: [
+                  const SizedBox(width: 72, child: Text('段间距')),
+                  Expanded(
+                    child: Slider(
+                      value: s.paraSpacing,
+                      min: 6,
+                      max: 40,
+                      divisions: 17,
+                      label: s.paraSpacing.toStringAsFixed(0),
+                      onChanged: (v) {
+                        s.paraSpacing = v;
+                        setSheet(() {});
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                ]),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: const Text('中文段落首行缩进'),
+                  value: s.firstLineIndent,
+                  onChanged: (v) {
+                    s.firstLineIndent = v;
+                    setSheet(() {});
+                    setState(() {});
+                  },
+                ),
                 const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

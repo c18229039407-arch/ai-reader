@@ -112,8 +112,8 @@ jobs:
         run: |
           sed -i 's/<application/<application android:usesCleartextTraffic="true"/' android/app/src/main/AndroidManifest.xml
           sed -i 's/android:label="ai_reader"/android:label="林间阅读"/' android/app/src/main/AndroidManifest.xml || true
-          # url_launcher：Android 11+ 需 queries 声明才能打开 https 链接
-          sed -i 's|<application|<queries><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent></queries><application|' android/app/src/main/AndroidManifest.xml
+          # url_launcher（打开 https）+ flutter_tts（Android 11+ 需 queries 声明才能发现 TTS 引擎）
+          sed -i 's|<application|<queries><intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries><application|' android/app/src/main/AndroidManifest.xml
 
       - name: 构建 APK
         run: flutter build apk --release

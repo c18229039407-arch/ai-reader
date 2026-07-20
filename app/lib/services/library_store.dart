@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 
 import '../models/models.dart';
 import 'epub_loader.dart';
+import 'reading_stats.dart';
 import 'txt_loader.dart';
 
 /// 本地书库存储（B2）。目录布局与 docs/architecture.md §4 的
@@ -19,12 +20,16 @@ import 'txt_loader.dart';
 ///
 /// root 由调用方注入（App 用 path_provider 取，测试用临时目录）。
 class LibraryStore {
-  LibraryStore(this.rootDir, {this.deviceId = 'local'});
+  LibraryStore(this.rootDir, {this.deviceId = 'local'})
+      : stats = ReadingStatsStore(rootDir, deviceId: deviceId);
 
   final Directory rootDir;
 
   /// 本设备标识（E4）：决定本机状态文件名，避免多设备写同一文件。
   final String deviceId;
+
+  /// 阅读时长统计（同 root、同 deviceId，多设备读取时合并）。
+  final ReadingStatsStore stats;
 
   Directory get _booksDir => Directory(p.join(rootDir.path, 'books'));
   Directory get _stateDir => Directory(p.join(rootDir.path, 'state'));

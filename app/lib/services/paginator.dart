@@ -28,6 +28,7 @@ class PaginateSpec {
     required this.height,
     required this.fontSize,
     required this.lineHeight,
+    this.letterSpacing = 0.2,
     this.paraSpacing = 14,
     this.imageHeight = 320,
   });
@@ -36,6 +37,7 @@ class PaginateSpec {
   final double height;
   final double fontSize;
   final double lineHeight;
+  final double letterSpacing;
   final double paraSpacing;
   final double imageHeight;
 
@@ -45,10 +47,13 @@ class PaginateSpec {
       other.width == width &&
       other.height == height &&
       other.fontSize == fontSize &&
-      other.lineHeight == lineHeight;
+      other.lineHeight == lineHeight &&
+      other.letterSpacing == letterSpacing &&
+      other.paraSpacing == paraSpacing;
 
   @override
-  int get hashCode => Object.hash(width, height, fontSize, lineHeight);
+  int get hashCode =>
+      Object.hash(width, height, fontSize, lineHeight, letterSpacing, paraSpacing);
 }
 
 TextStyle _styleFor(ParaKind kind, PaginateSpec spec) {
@@ -69,7 +74,10 @@ TextStyle _styleFor(ParaKind kind, PaginateSpec spec) {
           height: 1.4,
           fontWeight: FontWeight.w600);
     default:
-      return TextStyle(fontSize: spec.fontSize, height: spec.lineHeight);
+      return TextStyle(
+          fontSize: spec.fontSize,
+          height: spec.lineHeight,
+          letterSpacing: spec.letterSpacing);
   }
 }
 

@@ -13,6 +13,7 @@ import '../reader/pdf_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../search/search_screen.dart';
 import '../settings/settings_screen.dart';
+import '../stats/stats_screen.dart';
 
 /// 书架封面色板（按书名散列取用，森林/自然系）。
 const _coverPalettes = [
@@ -788,6 +789,15 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                   settings: widget.settings)));
                           _refresh();
                         },
+                      ),
+                      IconButton(
+                        tooltip: '阅读统计',
+                        icon: const Icon(Icons.insights_outlined, size: 20),
+                        onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                                builder: (_) => StatsScreen(
+                                    stats: widget.store.stats,
+                                    books: _books))),
                       ),
                       IconButton(
                         tooltip: '设置',

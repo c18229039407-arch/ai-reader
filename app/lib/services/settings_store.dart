@@ -154,6 +154,27 @@ class SettingsStore extends ChangeNotifier {
     _prefs.setString('reading_mode', v);
   }
 
+  /// 字间距（px）。
+  double get letterSpacing => _prefs.getDouble('letter_spacing') ?? 0.2;
+  set letterSpacing(double v) {
+    _prefs.setDouble('letter_spacing', v);
+    notifyListeners();
+  }
+
+  /// 段间距（px）。
+  double get paraSpacing => _prefs.getDouble('para_spacing') ?? 14;
+  set paraSpacing(double v) {
+    _prefs.setDouble('para_spacing', v);
+    notifyListeners();
+  }
+
+  /// 中文首行缩进两字。
+  bool get firstLineIndent => _prefs.getBool('first_line_indent') ?? false;
+  set firstLineIndent(bool v) {
+    _prefs.setBool('first_line_indent', v);
+    notifyListeners();
+  }
+
   double get pageMargin => _prefs.getDouble('page_margin') ?? 28;
   set pageMargin(double v) {
     _prefs.setDouble('page_margin', v);
