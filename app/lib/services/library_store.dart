@@ -52,6 +52,29 @@ class LibraryStore {
   }
 
   /// 导入一本书（A1）。返回新增或已存在的 Book。
+  /// 网上下载的文件名常是「书名+(作者1,作者2)+.txt」这类拼接格式，
+  /// 直接当书名很难看。清洗：+/_ 转空格、提取末尾括号里的作者、去残留符号。
+  static (String title, String? author) cleanImportTitle(String raw) {
+    var t = raw.replaceAll(RegExp(r'[+_]+'), ' ').trim();
+    String? author;
+    final m = RegExp(r'[（(]([^（）()]{2,40})[）)]\s*$').firstMatch(t);
+    if (m != null) {
+      final inner = m.group(1)!.trim();
+      // 排除「(上)(下)(第一卷)」这类分册标记，避免误当作者
+      final volume = RegExp(
+          r'^(上|下|中|全|完|卷[一二三四五六七八九十\d]*|第?[一二三四五六七八九十\d]+[册卷部集篇]?)$');
+      if (!volume.hasMatch(inner)) {
+        author = inner;
+        t = t.substring(0, m.start).trim();
+      }
+    }
+    t = t
+        .replaceAll(RegExp(r'\s{2,}'), ' ')
+        .replaceAll(RegExp(r'[\s\-–—·+]+$'), '')
+        .trim();
+    return (t.isEmpty ? raw : t, author);
+  }
+
   Future<Book> importBytes(Uint8List bytes, String originalName) async {
     await init();
     final id = sha1.convert(bytes).toString().substring(0, 16);
@@ -68,8 +91,10 @@ class LibraryStore {
     final rel = p.join('books', '$id.$format');
     await File(p.join(rootDir.path, rel)).writeAsBytes(bytes);
 
-    String title = p.basenameWithoutExtension(originalName);
-    String author = '未知作者';
+    final (cleanTitle, cleanAuthor) =
+        cleanImportTitle(p.basenameWithoutExtension(originalName));
+    String title = cleanTitle;
+    String author = cleanAuthor ?? '未知作者';
     String lang = '';
     if (format == 'epub') {
       try {
@@ -82,7 +107,9 @@ class LibraryStore {
           await cf.parent.create(recursive: true);
           await cf.writeAsBytes(parsed.coverBytes!);
         }
-        author = parsed.author;
+        if (parsed.author.trim().isNotEmpty && parsed.author != '未知作者') {
+          author = parsed.author;
+        }
         lang = parsed.chapters
                 .expand((c) => c.paragraphs)
                 .take(5)

@@ -334,6 +334,13 @@ class _ShelfScreenState extends State<ShelfScreen> {
               SizedBox(width: 10),
               Text('编辑标签'),
             ])),
+        const PopupMenuItem(
+            value: 'info',
+            child: Row(children: [
+              Icon(Icons.edit_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('编辑书名/作者'),
+            ])),
         const PopupMenuDivider(),
         const PopupMenuItem(
             value: 'remove',
@@ -349,9 +356,57 @@ class _ShelfScreenState extends State<ShelfScreen> {
         _open(book);
       case 'tags':
         _editTags(book);
+      case 'info':
+        _editInfo(book);
       case 'remove':
         _confirmRemove(book);
     }
+  }
+
+  /// 编辑书名/作者（导入文件名难看时手工修正）。
+  Future<void> _editInfo(Book book) async {
+    final titleCtrl = TextEditingController(text: book.title);
+    final authorCtrl = TextEditingController(
+        text: book.author == '未知作者' ? '' : book.author);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑书籍信息'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: '书名', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: authorCtrl,
+              decoration: const InputDecoration(
+                  labelText: '作者', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('保存')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final title = titleCtrl.text.trim();
+    final author = authorCtrl.text.trim();
+    await widget.store.updateBook(book.copyWith(
+      title: title.isEmpty ? book.title : title,
+      author: author.isEmpty ? '未知作者' : author,
+    ));
+    _refresh();
   }
 
   void _bookMenu(Book book) {
@@ -367,6 +422,14 @@ class _ShelfScreenState extends State<ShelfScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _editTags(book);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('编辑书名/作者'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editInfo(book);
               },
             ),
             ListTile(

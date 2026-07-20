@@ -874,9 +874,59 @@ class _ReaderScreenState extends State<ReaderScreen> {
         child: ListView.builder(
           controller: _scroll,
           padding: EdgeInsets.symmetric(horizontal: s.pageMargin, vertical: 20),
-          itemCount: ch.paragraphs.length,
-          itemBuilder: (_, i) => _paragraph(ch, i, s),
+          itemCount: ch.paragraphs.length + 1,
+          itemBuilder: (_, i) =>
+              i < ch.paragraphs.length ? _paragraph(ch, i, s) : _chapterEnd(),
         ),
+      ),
+    );
+  }
+
+  /// 章末连读区：读完一章不必去目录，直接点大按钮进下一章（C2 连续阅读）。
+  Widget _chapterEnd() {
+    final content = _content;
+    if (content == null) return const SizedBox.shrink();
+    final hasNext = _chapterIndex < content.chapters.length - 1;
+    final hasPrev = _chapterIndex > 0;
+    final dim = _paper.fg?.withValues(alpha: .45) ??
+        Theme.of(context).colorScheme.outline;
+
+    Widget rule() => Expanded(child: Divider(color: dim.withValues(alpha: .4)));
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 32, bottom: 72),
+      child: Column(
+        children: [
+          Row(children: [
+            rule(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Text(hasNext ? '本章完' : '全书完',
+                  style: TextStyle(fontSize: 12, color: dim, letterSpacing: 2)),
+            ),
+            rule(),
+          ]),
+          const SizedBox(height: 24),
+          if (hasNext)
+            FilledButton.tonalIcon(
+              onPressed: () => _goto(_chapterIndex + 1),
+              icon: const Icon(Icons.arrow_forward, size: 18),
+              label: Text(
+                '继续阅读：${content.chapters[_chapterIndex + 1].title}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            )
+          else
+            Text('— 感谢阅读 —', style: TextStyle(color: dim)),
+          if (hasPrev) ...[
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => _goto(_chapterIndex - 1),
+              child: Text('← 回看上一章', style: TextStyle(color: dim, fontSize: 13)),
+            ),
+          ],
+        ],
       ),
     );
   }
