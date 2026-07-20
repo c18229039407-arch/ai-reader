@@ -47,6 +47,12 @@ class SettingsStore extends ChangeNotifier {
   }
 
   /// 首次隐私说明是否已确认（F3）。
+  /// 封面提取规则版本：升级规则后触发一次全量重提取（v2 起排除站标 logo）。
+  int get coverRev => _prefs.getInt('cover_rev') ?? 1;
+  set coverRev(int v) {
+    _prefs.setInt('cover_rev', v);
+  }
+
   bool get privacyAcknowledged => _prefs.getBool('privacy_ack') ?? false;
   set privacyAcknowledged(bool v) {
     _prefs.setBool('privacy_ack', v);

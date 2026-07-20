@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../services/cover_fetcher.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
 import '../../services/ai_autodetect.dart';
@@ -53,6 +54,11 @@ class _ShelfScreenState extends State<ShelfScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _maybeShowPrivacy();
       await _autoSetupAi();
+      // 封面规则升级迁移（v2 起排除维基文库等站标 logo）：清掉重提
+      if (widget.settings.coverRev < 2) {
+        await widget.store.resetCovers();
+        widget.settings.coverRev = 2;
+      }
       // 老书补封面（后台，一次性；新导入的书在导入时已提取）
       final added = await widget.store.backfillCovers();
       if (added > 0 && mounted) setState(() {});
@@ -341,6 +347,28 @@ class _ShelfScreenState extends State<ShelfScreen> {
               SizedBox(width: 10),
               Text('编辑书名/作者'),
             ])),
+        const PopupMenuItem(
+            value: 'cover-online',
+            child: Row(children: [
+              Icon(Icons.image_search_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('联网找封面'),
+            ])),
+        const PopupMenuItem(
+            value: 'cover-pick',
+            child: Row(children: [
+              Icon(Icons.add_photo_alternate_outlined, size: 18),
+              SizedBox(width: 10),
+              Text('选择封面图片…'),
+            ])),
+        if (widget.store.coverFile(book.id).existsSync())
+          const PopupMenuItem(
+              value: 'cover-reset',
+              child: Row(children: [
+                Icon(Icons.hide_image_outlined, size: 18),
+                SizedBox(width: 10),
+                Text('恢复默认封面'),
+              ])),
         const PopupMenuDivider(),
         const PopupMenuItem(
             value: 'remove',
@@ -358,12 +386,198 @@ class _ShelfScreenState extends State<ShelfScreen> {
         _editTags(book);
       case 'info':
         _editInfo(book);
+      case 'cover-online':
+        _fetchCoverOnline(book);
+      case 'cover-pick':
+        _pickCoverImage(book);
+      case 'cover-reset':
+        _resetCover(book);
       case 'remove':
         _confirmRemove(book);
     }
   }
 
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// 联网找封面（Open Library）。中文书覆盖有限，找不到会提示手动设置。
+  Future<void> _fetchCoverOnline(Book book) async {
+    _snack('正在联网找《${book.title}》的封面…');
+    final bytes = await fetchCoverAuto(book.title,
+        author: book.author, proxyCfg: widget.settings.proxyAddress);
+    if (bytes == null) {
+      _snack('没找到《${book.title}》的封面——中文书的公开封面库覆盖很少，'
+          '可右键「选择封面图片」手动设置（网上另存图片即可用）');
+      return;
+    }
+    final cf = widget.store.coverFile(book.id);
+    await cf.parent.create(recursive: true);
+    await cf.writeAsBytes(bytes);
+    if (mounted) setState(() {});
+    _snack('已更新《${book.title}》封面');
+  }
+
+  /// 手动选一张本地图片当封面。
+  Future<void> _pickCoverImage(Book book) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final bytes = result?.files.firstOrNull?.bytes;
+    if (bytes == null) return;
+    final cf = widget.store.coverFile(book.id);
+    await cf.parent.create(recursive: true);
+    await cf.writeAsBytes(bytes);
+    if (mounted) setState(() {});
+    _snack('已更新《${book.title}》封面');
+  }
+
+  Future<void> _resetCover(Book book) async {
+    final cf = widget.store.coverFile(book.id);
+    if (await cf.exists()) await cf.delete();
+    if (mounted) setState(() {});
+  }
+
   /// 编辑书名/作者（导入文件名难看时手工修正）。
+  /// 生成式封面 2.0：仿传统书装「题签」——素色布面 + 左上竖排书名签条。
+  /// 中文书名竖排（古籍味），西文书名保持横排。
+  Widget _paletteCover(Book b, List<int> palette) {
+    final isCjk = RegExp(r'[一-鿿]').hasMatch(b.title);
+    final base = Color(palette[0]);
+    const labelBg = Color(0xFFF6F1E7); // 宣纸米白
+    const ink = Color(0xFF3B3B3B);
+    const serif = ['Songti SC', 'STSong', 'Noto Serif SC', 'serif'];
+
+    Widget label;
+    if (isCjk) {
+      // 竖排题签：一列一字，最多 8 字
+      final chars = b.title.replaceAll(RegExp(r'\s'), '').characters.toList();
+      final shown = chars.take(8).toList();
+      label = Container(
+        margin: const EdgeInsets.only(left: 16, top: 0),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 12),
+        decoration: BoxDecoration(
+          color: labelBg,
+          borderRadius:
+              const BorderRadius.vertical(bottom: Radius.circular(3)),
+          border: Border.all(color: ink.withValues(alpha: .15), width: .8),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: .18), blurRadius: 4),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final c in shown)
+              Text(c,
+                  style: const TextStyle(
+                      fontSize: 16,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                      color: ink,
+                      fontFamilyFallback: serif)),
+            if (chars.length > shown.length)
+              Text('…',
+                  style: TextStyle(
+                      fontSize: 13, color: ink.withValues(alpha: .6))),
+          ],
+        ),
+      );
+    } else {
+      label = Container(
+        margin: const EdgeInsets.fromLTRB(14, 18, 14, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: labelBg,
+          borderRadius: BorderRadius.circular(3),
+          border: Border.all(color: ink.withValues(alpha: .15), width: .8),
+        ),
+        child: Text(b.title,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+                color: ink,
+                fontFamilyFallback: serif)),
+      );
+    }
+
+    return Stack(
+      children: [
+        // 布面质感：右下角同色系大圆做微光影层次
+        Positioned(
+          right: -30,
+          bottom: -30,
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white.withValues(alpha: .06),
+            ),
+          ),
+        ),
+        // 书脊装饰线
+        Positioned(
+          left: 8,
+          top: 0,
+          bottom: 0,
+          child: Container(
+            width: 1,
+            color: Colors.white.withValues(alpha: .25),
+          ),
+        ),
+        Align(alignment: Alignment.topLeft, child: label),
+        // 底部：作者 + 格式
+        Positioned(
+          left: 16,
+          right: 12,
+          bottom: 12,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  b.author == '未知作者' ? '' : b.author,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontSize: 10.5,
+                      color: Colors.white.withValues(alpha: .85),
+                      fontFamilyFallback: serif),
+                ),
+              ),
+              Text(b.format.toUpperCase(),
+                  style: TextStyle(
+                      fontSize: 9,
+                      letterSpacing: 1.2,
+                      color: Colors.white.withValues(alpha: .55))),
+            ],
+          ),
+        ),
+        // 顶部一抹深色压边，增加“布面”厚度感
+        Positioned(
+          left: 0,
+          right: 0,
+          top: 0,
+          child: Container(
+            height: 3,
+            decoration: BoxDecoration(
+              color: base.withValues(alpha: .5),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _editInfo(Book book) async {
     final titleCtrl = TextEditingController(text: book.title);
     final authorCtrl = TextEditingController(
@@ -430,6 +644,22 @@ class _ShelfScreenState extends State<ShelfScreen> {
               onTap: () {
                 Navigator.pop(ctx);
                 _editInfo(book);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_search_outlined),
+              title: const Text('联网找封面'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _fetchCoverOnline(book);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.add_photo_alternate_outlined),
+              title: const Text('选择封面图片…'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickCoverImage(book);
               },
             ),
             ListTile(
@@ -716,72 +946,7 @@ class _ShelfScreenState extends State<ShelfScreen> {
                                       ),
                                     ),
                                   )
-                                : Stack(
-                              children: [
-                                // 书脊装饰线
-                                Positioned(
-                                  left: 10,
-                                  top: 0,
-                                  bottom: 0,
-                                  child: Container(
-                                    width: 1.5,
-                                    color: Colors.white.withValues(alpha: .28),
-                                  ),
-                                ),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(22, 16, 14, 14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        b.title,
-                                        maxLines: 4,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 15,
-                                          height: 1.4,
-                                          color: Colors.white,
-                                          fontFamilyFallback: [
-                                            'Songti SC',
-                                            'STSong',
-                                            'Noto Serif SC',
-                                            'serif',
-                                          ],
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      Text(b.author,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.white
-                                                  .withValues(alpha: .85))),
-                                      const SizedBox(height: 6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 7, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white
-                                              .withValues(alpha: .18),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                        ),
-                                        child: Text(b.format.toUpperCase(),
-                                            style: TextStyle(
-                                                fontSize: 9,
-                                                letterSpacing: 1,
-                                                color: Colors.white
-                                                    .withValues(alpha: .9))),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                                : _paletteCover(b, palette),
                           ),
                         ),
                         const SizedBox(height: 8),

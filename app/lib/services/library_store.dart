@@ -199,6 +199,12 @@ class LibraryStore {
   /// 封面文件约定路径：covers/<id>.img（原始字节，Image.file 可直接解码）。
   File coverFile(String id) => File(p.join(rootDir.path, 'covers', '$id.img'));
 
+  /// 清空全部已提取封面（提取规则升级时的迁移用；自定义封面也会一并清掉）。
+  Future<void> resetCovers() async {
+    final dir = Directory(p.join(rootDir.path, 'covers'));
+    if (await dir.exists()) await dir.delete(recursive: true);
+  }
+
   /// 为库中已有但缺封面的 EPUB 书补提取封面；返回新增封面数。
   Future<int> backfillCovers() async {
     var added = 0;

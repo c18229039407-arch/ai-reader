@@ -106,6 +106,17 @@ void main() {
       final book = await loadEpub(epub);
       expect(book.coverBytes, isNull);
     });
+
+    test('回归：大尺寸站标 logo 也不当封面（维基文库冰山 logo 事故）', () async {
+      final epub = buildEpub(
+        chapters: {'c1.xhtml': '<html><body><p>${'正文' * 200}</p></body></html>'},
+        coverImage: Uint8List.fromList(List.filled(40 * 1024, 0xAB)),
+        coverName: 'images/Wikisource-logo.svg.png',
+      );
+      final book = await loadEpub(epub);
+      expect(book.coverBytes, isNull,
+          reason: 'logo/icon/badge 命名的图不论多大都不能当封面');
+    });
   });
 
   group('句级高亮模型', () {

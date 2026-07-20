@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:ai_reader/services/book_source.dart';
+import 'package:ai_reader/services/cover_fetcher.dart';
 import 'package:ai_reader/services/epub_loader.dart';
 import 'package:ai_reader/services/s2t_map.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -78,6 +79,18 @@ void main() {
     // ignore: avoid_print
     print('✓ 反例「小岛经济学」→ 0 条（此前全文检索会返回判决书等噪音）');
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('真实 Open Library：英文书能联网取到封面', () async {
+    if (!enabled) {
+      markTestSkipped('设 E2E=1 才执行（需要外网）');
+      return;
+    }
+    final bytes = await CoverFetcher().fetch('The Wealth of Nations');
+    expect(bytes, isNotNull);
+    expect(bytes!.length, greaterThan(5 * 1024));
+    // ignore: avoid_print
+    print('✓ Open Library 封面 ${bytes.length ~/ 1024}KB');
+  }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('真实 Gutendex：英文作者 Adam Smith 直接命中', () async {
     if (!enabled) {

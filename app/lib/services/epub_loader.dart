@@ -39,13 +39,18 @@ List<String> _cleanParagraphs(List<String> paras, String bookTitle) => paras
         p != bookTitle)
     .toList();
 
+/// 站标/图标类图片不能当封面（维基文库 EPUB 里唯一的图就是它的冰山 logo）。
+final _notCoverName = RegExp(r'logo|icon|badge|emblem|symbol|wikisource|ornament',
+    caseSensitive: false);
+
 /// 从 EPUB 内嵌图片里挑封面：优先文件名含 cover，否则取最大的一张；
-/// 小于 8KB 的（logo、装饰图）不当封面。
+/// 小于 8KB 的（装饰图）与站标类命名（logo 等）不当封面。
 Uint8List? _pickCover(EpubBook book) {
   final images = book.Content?.Images;
   if (images == null || images.isEmpty) return null;
   MapEntry<String, EpubByteContentFile>? best;
   for (final e in images.entries) {
+    if (_notCoverName.hasMatch(e.key)) continue;
     final len = e.value.Content?.length ?? 0;
     if (e.key.toLowerCase().contains('cover') && len > 8 * 1024) {
       best = e;
