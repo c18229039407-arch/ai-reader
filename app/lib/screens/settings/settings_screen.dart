@@ -320,6 +320,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 onChanged: (_) => _saveProfile(),
               ),
               const SizedBox(height: 28),
+              Text('书源代理', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              TextField(
+                controller: TextEditingController(text: s.proxyAddress),
+                decoration: const InputDecoration(
+                  labelText: '代理设置',
+                  helperText: '默认 auto：搜索公版书时自动探测本机常见代理端口(7890/1087 等)。'
+                      '可填 host:port 指定；留空则仅直连。仅书源流量走代理。',
+                  helperMaxLines: 3,
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (v) => s.proxyAddress = v,
+              ),
+              const SizedBox(height: 28),
               Text('自定义公版书源（实验，A5）',
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),

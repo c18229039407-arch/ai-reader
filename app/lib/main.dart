@@ -8,6 +8,7 @@ import 'package:window_manager/window_manager.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'screens/onboarding/welcome_screen.dart';
 import 'screens/reader/reader_papers.dart';
 import 'screens/shelf/shelf_screen.dart';
 import 'services/library_store.dart';
@@ -116,7 +117,9 @@ class AIReaderApp extends StatelessWidget {
           themeMode: mode,
           theme: themed(Brightness.light),
           darkTheme: themed(Brightness.dark),
-          home: ShelfScreen(settings: settings, store: store),
+          home: settings.onboardingDone
+              ? ShelfScreen(settings: settings, store: store)
+              : WelcomeScreen(settings: settings, store: store),
         );
       },
     );

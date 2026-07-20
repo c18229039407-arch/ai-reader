@@ -89,6 +89,20 @@ class SettingsStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 首次启动欢迎页是否已完成。
+  bool get onboardingDone => _prefs.getBool('onboarding_done') ?? false;
+  set onboardingDone(bool v) {
+    _prefs.setBool('onboarding_done', v);
+    notifyListeners();
+  }
+
+  /// 书源网络代理：'auto' 自动探测本机常见代理端口；'' 禁用；'host:port' 指定。
+  String get proxyAddress => _prefs.getString('proxy_address') ?? 'auto';
+  set proxyAddress(String v) {
+    _prefs.setString('proxy_address', v.trim());
+    notifyListeners();
+  }
+
   // ---------- 自定义数据源（A5，实验性）----------
   /// 每行一个 Gutendex 兼容源的 baseUrl；添加何种源属用户自身行为。
   List<String> get customSourceUrls =>

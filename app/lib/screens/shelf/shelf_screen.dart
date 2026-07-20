@@ -7,9 +7,7 @@ import 'package:flutter/material.dart';
 import '../../models/models.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
-import '../../services/book_source.dart';
-import '../../services/llm_client.dart';
-import '../../services/ollama_client.dart';
+import '../../services/ai_autodetect.dart';
 import '../reader/pdf_reader_screen.dart';
 import '../reader/reader_screen.dart';
 import '../search/search_screen.dart';
@@ -65,47 +63,13 @@ class _ShelfScreenState extends State<ShelfScreen> {
     if (s.aiSetupDone || !s.aiEnabled) return;
     if (Platform.environment['FLUTTER_TEST'] == 'true') return; // 测试环境跳过
 
-    // 1) Ollama（默认端口 11434）
-    final ollama = OllamaClient('http://127.0.0.1:11434');
-    if (await ollama.healthCheck()) {
-      final models = await ollama.listModels();
-      if (models.isNotEmpty) {
-        // 优先小模型（对低内存机型友好），否则取第一个
-        final preferred = models.firstWhere(
-          (m) => m.contains('3b') || m.contains('1.5b') || m.contains('4b'),
-          orElse: () => models.first,
-        );
-        s
-          ..providerType = 'ollama'
-          ..ollamaUrl = 'http://127.0.0.1:11434'
-          ..model = preferred
-          ..aiSetupDone = true;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('✓ 已自动连接本机 Ollama（模型 $preferred），AI 功能开箱即用')));
-        }
-        return;
+    final detected = await autoDetectLocalAi(s);
+    if (detected != null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('✓ $detected，AI 开箱即用')));
       }
-    }
-
-    // 2) LM Studio（默认端口 1234，OpenAI 兼容，无需 Key）
-    final lmStudio = OpenAiCompatClient(
-        baseUrl: 'http://127.0.0.1:1234/v1', apiKey: 'lm-studio');
-    if (await lmStudio.healthCheck()) {
-      final models = await lmStudio.listModels();
-      if (models.isNotEmpty) {
-        s
-          ..providerType = 'openai'
-          ..openaiBaseUrl = 'http://127.0.0.1:1234/v1'
-          ..openaiApiKey = 'lm-studio'
-          ..openaiModel = models.first
-          ..aiSetupDone = true;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('✓ 已自动连接本机 LM Studio（模型 ${models.first}）')));
-        }
-        return;
-      }
+      return;
     }
 
     // 3) 没有本地模型 → 引导云端 Key
@@ -522,25 +486,10 @@ class _ShelfScreenState extends State<ShelfScreen> {
                         icon:
                             const Icon(Icons.travel_explore_outlined, size: 20),
                         onPressed: () async {
-                          // A5：内置合法源 + 用户自定义 Gutendex 兼容源
-                          final sources = <BookSource>[
-                            ...defaultSources,
-                            ...widget.settings.customSourceUrls
-                                .asMap()
-                                .entries
-                                .map(
-                                  (e) => GutendexSource(
-                                    baseUrl: e.value.trim(),
-                                    id: 'custom-${e.key}',
-                                    displayName:
-                                        Uri.tryParse(e.value)?.host ?? e.value,
-                                    licenseNote: '用户自定义源，内容合规责任由配置者自负',
-                                  ),
-                                ),
-                          ];
                           await Navigator.of(context).push(MaterialPageRoute(
                               builder: (_) => SearchScreen(
-                                  store: widget.store, sources: sources)));
+                                  store: widget.store,
+                                  settings: widget.settings)));
                           _refresh();
                         },
                       ),
