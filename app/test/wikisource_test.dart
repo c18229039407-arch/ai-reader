@@ -8,11 +8,14 @@ void main() {
   group('WikisourceZhSource', () {
     late HttpServer server;
     late String apiBase;
+    final requestedUris = <String>[];
 
     setUp(() async {
+      requestedUris.clear();
       server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       apiBase = 'http://127.0.0.1:${server.port}/w/api.php';
       server.listen((req) {
+        requestedUris.add(req.uri.toString());
         final body = jsonEncode({
           'query': {
             'searchinfo': {'totalhits': 4},
@@ -43,6 +46,16 @@ void main() {
       expect(results[0].sourceId, 'wikisource-zh');
       expect(results[0].downloadUrl,
           contains('format=epub&lang=zh&page=%E9%A7%B1%E9%A7%9D%E7%A5%A5%E5%AD%90'));
+    });
+
+    test('回归：查询必须限定标题（intitle:）且不带引号，避免全文噪音', () async {
+      final src = WikisourceZhSource(apiBase: apiBase);
+      await src.search('小岛"经济学"');
+
+      expect(requestedUris, hasLength(1));
+      final sr = Uri.parse(requestedUris.single).queryParameters['srsearch'];
+      expect(sr, startsWith('intitle:'));
+      expect(sr, isNot(contains('"')), reason: '引号会禁用简繁自动转换（实测）');
     });
 
     test('下载校验 EPUB 魔数：HTML 报错页会被拒绝', () async {

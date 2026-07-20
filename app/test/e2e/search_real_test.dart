@@ -61,6 +61,18 @@ void main() {
         '解析 ${loaded.chapters.length} 章 / $totalChars 字');
   }, timeout: const Timeout(Duration(minutes: 4)));
 
+  test('真实维基文库反例：版权期内新书「小岛经济学」必须 0 结果（不返回无关公文）', () async {
+    if (!enabled) {
+      markTestSkipped('设 E2E=1 才执行（需要外网）');
+      return;
+    }
+    final results = await WikisourceZhSource().search('小岛经济学');
+    expect(results, isEmpty,
+        reason: '标题限定后不应再把正文碰巧含「经济」等字样的判决书/公文当结果');
+    // ignore: avoid_print
+    print('✓ 反例「小岛经济学」→ 0 条（此前全文检索会返回判决书等噪音）');
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
   test('真实 Gutendex：英文作者 Adam Smith 直接命中', () async {
     if (!enabled) {
       markTestSkipped('设 E2E=1 才执行（需要外网）');

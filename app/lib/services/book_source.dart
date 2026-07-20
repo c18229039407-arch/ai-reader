@@ -138,9 +138,13 @@ class WikisourceZhSource implements BookSource {
 
   @override
   Future<List<BookSearchResult>> search(String query, {String? lang}) async {
+    // intitle: 限定标题命中——否则 MediaWiki 全文检索会把正文里
+    // 碰巧含相同字词的公文、判决书等都当结果返回（相关性灾难）。
+    // 注意：不能给短语加引号，引号会禁用简→繁自动转换（实测）。
+    final cleaned = query.replaceAll('"', ' ').trim();
     final uri = Uri.parse(
         '$apiBase?action=query&list=search&format=json&srlimit=20&srnamespace=0'
-        '&srsearch=${Uri.encodeQueryComponent(query)}');
+        '&srsearch=${Uri.encodeQueryComponent('intitle:$cleaned')}');
     final res = await _http.get(uri).timeout(const Duration(seconds: 20));
     if (res.statusCode != 200) {
       throw Exception('Wikisource HTTP ${res.statusCode}');
