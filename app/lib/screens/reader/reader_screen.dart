@@ -13,6 +13,7 @@ import '../../services/paginator.dart';
 import '../../services/settings_store.dart';
 import '../../services/translation_store.dart';
 import '../../services/tts_service.dart';
+import '../../ui/motion.dart';
 import 'annotations_screen.dart';
 import 'assistant_panel.dart';
 import 'concepts_screen.dart';
@@ -842,7 +843,27 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 Expanded(
                   child: Stack(
                     children: [
-                      _readerBody(ch, s),
+                      // 章节切换柔和过渡（淡入 + 轻上移；跟随系统减弱动效）
+                      AnimatedSwitcher(
+                        duration: reduceMotion(context)
+                            ? Duration.zero
+                            : const Duration(milliseconds: 260),
+                        switchInCurve: Curves.easeOutCubic,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: SlideTransition(
+                            position: Tween(
+                                    begin: const Offset(0, 0.015),
+                                    end: Offset.zero)
+                                .animate(anim),
+                            child: child,
+                          ),
+                        ),
+                        child: KeyedSubtree(
+                          key: ValueKey('ch$_chapterIndex'),
+                          child: _readerBody(ch, s),
+                        ),
+                      ),
                       // 划选后自动浮出的操作条（免右键，动效 L2）
                       Positioned(
                         left: 0,

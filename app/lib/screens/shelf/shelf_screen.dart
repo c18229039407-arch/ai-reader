@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
 import '../../services/cover_fetcher.dart';
+import '../../ui/motion.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
 import '../../services/ai_autodetect.dart';
@@ -914,7 +915,26 @@ class _ShelfScreenState extends State<ShelfScreen> {
               _coverPalettes[b.title.hashCode.abs() % _coverPalettes.length];
           final cover = widget.store.coverFile(b.id);
           final hasCover = cover.existsSync();
-          return _Hoverable(
+          // 首载交错入场（ReactBits stagger 范式；重建时不重播）
+          if (!_entranceDone) {
+            return Reveal(
+              delay: staggerDelay(i),
+              child: _bookCard(context, b, pct, palette, cover, hasCover),
+            );
+          }
+          return _bookCard(context, b, pct, palette, cover, hasCover);
+        },
+      );
+    });
+  }
+
+  bool _entranceDone = false;
+
+  Widget _bookCard(BuildContext context, Book b, double pct, List<int> palette,
+      File cover, bool hasCover) {
+    // 入场动画只播一次
+    WidgetsBinding.instance.addPostFrameCallback((_) => _entranceDone = true);
+    return _Hoverable(
               child: GestureDetector(
                   onSecondaryTapUp: (d) =>
                       _showBookContextMenu(b, d.globalPosition),
@@ -1006,9 +1026,6 @@ class _ShelfScreenState extends State<ShelfScreen> {
                       ],
                     ),
                   )));
-        },
-      );
-    });
   }
 }
 

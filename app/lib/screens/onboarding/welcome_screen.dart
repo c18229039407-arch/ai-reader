@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
+import '../../ui/motion.dart';
 import '../../services/ai_autodetect.dart';
 import '../../services/library_store.dart';
 import '../../services/settings_store.dart';
@@ -101,26 +102,38 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(22),
-                              child: Image.asset('assets/icon/logo.png',
-                                  width: 96, height: 96),
+                            Reveal(
+                              blur: 8,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(22),
+                                child: Image.asset('assets/icon/logo.png',
+                                    width: 96, height: 96),
+                              ),
                             ),
                             const SizedBox(height: 24),
-                            const Text('林间阅读',
-                                style: TextStyle(
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w600,
-                                    fontFamilyFallback: serif)),
+                            Reveal(
+                              delay: staggerDelay(1, stepMs: 120),
+                              blur: 6,
+                              child: const Text('林间阅读',
+                                  style: TextStyle(
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamilyFallback: serif)),
+                            ),
                             const SizedBox(height: 12),
-                            Text('读到看不懂的地方，\nAI 用你熟悉的生活经验讲给你听。',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    height: 1.8,
-                                    color: scheme.onSurfaceVariant)),
+                            Reveal(
+                              delay: staggerDelay(2, stepMs: 120),
+                              child: Text('读到看不懂的地方，\nAI 用你熟悉的生活经验讲给你听。',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 15,
+                                      height: 1.8,
+                                      color: scheme.onSurfaceVariant)),
+                            ),
                             const SizedBox(height: 28),
-                            Container(
+                            Reveal(
+                              delay: staggerDelay(3, stepMs: 120),
+                              child: Container(
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
                                 color: scheme.surfaceContainerHighest
@@ -135,6 +148,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                                     height: 1.7,
                                     color: scheme.onSurfaceVariant),
                               ),
+                            ),
                             ),
                           ],
                         ),

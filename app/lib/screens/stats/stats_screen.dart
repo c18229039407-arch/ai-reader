@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
 import '../../services/reading_stats.dart';
+import '../../ui/motion.dart';
 
 String fmtDuration(int seconds) {
   if (seconds < 60) return '$seconds 秒';
@@ -51,11 +52,17 @@ class _StatsScreenState extends State<StatsScreen> {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    _tile(context, '今日', fmtDuration(data.today(now))),
-                    _tile(context, '本周', fmtDuration(data.thisWeek(now))),
-                    _tile(context, '本月', fmtDuration(data.thisMonth(now))),
-                    _tile(context, '今年', fmtDuration(data.thisYear(now))),
-                    _tile(context, '连续阅读', '${data.streak(now)} 天'),
+                    for (final (i, t) in <(String, num, String Function(num))>[
+                      ('今日', data.today(now), (v) => fmtDuration(v.round())),
+                      ('本周', data.thisWeek(now), (v) => fmtDuration(v.round())),
+                      ('本月', data.thisMonth(now), (v) => fmtDuration(v.round())),
+                      ('今年', data.thisYear(now), (v) => fmtDuration(v.round())),
+                      ('连续阅读', data.streak(now), (v) => '${v.round()} 天'),
+                    ].indexed)
+                      Reveal(
+                        delay: staggerDelay(i),
+                        child: _tile(context, t.$1, t.$2, t.$3),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 28),
@@ -67,12 +74,15 @@ class _StatsScreenState extends State<StatsScreen> {
                         fontWeight: FontWeight.w500,
                         color: scheme.onSurface)),
                 const SizedBox(height: 12),
-                _Heatmap(
-                  data: data,
-                  now: now,
-                  onTap: (day) => setState(() =>
-                      _selectedDay = _selectedDay == day ? null : day),
-                  selected: _selectedDay,
+                Reveal(
+                  delay: staggerDelay(4),
+                  child: _Heatmap(
+                    data: data,
+                    now: now,
+                    onTap: (day) => setState(() =>
+                        _selectedDay = _selectedDay == day ? null : day),
+                    selected: _selectedDay,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 // 图例：少 → 多（浓度阶）
@@ -129,7 +139,8 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _tile(BuildContext context, String label, String value) {
+  Widget _tile(BuildContext context, String label, num value,
+      String Function(num) fmt) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: 150,
@@ -144,8 +155,10 @@ class _StatsScreenState extends State<StatsScreen> {
           Text(label,
               style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
           const SizedBox(height: 6),
-          // 数值走文本色（不是色阶色）——dataviz 规范
-          Text(value,
+          // 数值走文本色（不是色阶色）——dataviz 规范；CountUp 数字滚动
+          CountUp(
+              value: value,
+              format: fmt,
               style: const TextStyle(
                   fontSize: 20, fontWeight: FontWeight.w600)),
         ],
