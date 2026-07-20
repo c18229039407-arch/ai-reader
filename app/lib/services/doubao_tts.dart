@@ -25,15 +25,24 @@ class DoubaoTtsClient {
 
   static const defaultVoice = 'zh_female_shuangkuaisisi_moon_bigtts';
 
-  /// 官方授权音色精选（大模型音色，均为平台正版授权声音）。
+  /// 官方授权音色精选（大模型音色，代码经公开资料验证有效；
+  /// 账号实际可用音色以火山控制台为准，可在朗读面板填自定义代码）。
   static const presetVoices = <(String code, String label)>[
     ('zh_female_shuangkuaisisi_moon_bigtts', '爽快思思（女）'),
-    ('zh_female_wanwanxiaohe_moon_bigtts', '湾湾小何（女）'),
-    ('zh_female_linjianvhai_moon_bigtts', '邻家女孩（女）'),
-    ('zh_male_yuanboxiaoshu_moon_bigtts', '渊博小叔（男）'),
-    ('zh_male_beijingxiaoye_moon_bigtts', '北京小爷（男）'),
-    ('zh_female_wenrouxiaoya_moon_bigtts', '温柔小雅（女）'),
+    ('zh_female_wanwanxiaohe_moon_bigtts', '婉婉小荷（女·温柔）'),
+    ('zh_male_wennuanahu_moon_bigtts', '温暖阿虎（男）'),
+    ('zh_male_jingqiangkanye_moon_bigtts', '精强侃爷（男）'),
   ];
+
+  /// 「清甜温柔」一键预设（按用户提供的豆包 APP 调音参数换算到 API 刻度）：
+  /// 语速 0.90~0.98 → speed_ratio 0.94；音高 +0.4~+0.7（APP -1..+1 刻度）
+  /// → pitch_ratio ≈ 1.25；音色取温柔女声 婉婉小荷。
+  /// 注：APP 里的「混响 15%-25%」「情感调」为智能体界面功能，TTS API 不支持。
+  static const sweetGentlePreset = (
+    voice: 'zh_female_wanwanxiaohe_moon_bigtts',
+    speedRatio: 0.94,
+    pitchRatio: 1.25,
+  );
 
   /// 合成一段文本，返回 MP3 字节。[speed]/[pitch] 与系统 TTS 面板同刻度。
   Future<Uint8List> synthesize(String text,

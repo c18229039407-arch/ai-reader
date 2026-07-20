@@ -78,5 +78,15 @@ void main() {
             reason: '只允许平台官方大模型音色命名空间');
       }
     });
+
+    test('清甜温柔预设：参数在 API 合法区间且音色来自授权库', () {
+      const p = DoubaoTtsClient.sweetGentlePreset;
+      expect(p.speedRatio, inInclusiveRange(0.90, 0.98),
+          reason: '用户指定语速区间 0.90~0.98');
+      expect(p.pitchRatio, inInclusiveRange(1.2, 1.35),
+          reason: 'APP 音高 +0.4~+0.7 的换算区间');
+      expect(DoubaoTtsClient.presetVoices.any((v) => v.$1 == p.voice), isTrue,
+          reason: '预设音色必须是已验证的官方授权音色');
+    });
   });
 }

@@ -1053,6 +1053,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
+                      // 一键预设：清甜温柔（婉婉小荷 + 语速0.94 + 音高1.25）
+                      ActionChip(
+                        avatar: const Icon(Icons.auto_fix_high, size: 15),
+                        label: const Text('清甜温柔预设',
+                            style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          const p = DoubaoTtsClient.sweetGentlePreset;
+                          widget.settings.doubaoVoice = p.voice;
+                          _tts.rate = p.speedRatio / 2; // speed = rate*2
+                          _tts.pitch = p.pitchRatio;
+                          _applyTtsProvider();
+                          _tts.applyParams();
+                          setSheet(() {});
+                        },
+                      ),
                       for (final v in DoubaoTtsClient.presetVoices)
                         ChoiceChip(
                           label: Text(v.$2,
@@ -1065,6 +1080,25 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           },
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: TextEditingController(
+                        text: DoubaoTtsClient.presetVoices
+                                .any((v) => v.$1 == widget.settings.doubaoVoice)
+                            ? ''
+                            : widget.settings.doubaoVoice),
+                    decoration: const InputDecoration(
+                        labelText: '自定义音色代码（可选，控制台音色列表里复制）',
+                        hintText: 'zh_female_..._moon_bigtts',
+                        isDense: true,
+                        border: OutlineInputBorder()),
+                    onChanged: (v) {
+                      if (v.trim().isNotEmpty) {
+                        widget.settings.doubaoVoice = v.trim();
+                        _applyTtsProvider();
+                      }
+                    },
                   ),
                   ValueListenableBuilder<String?>(
                     valueListenable: _tts.lastError,
