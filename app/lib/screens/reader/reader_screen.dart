@@ -88,6 +88,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _translation = translation;
         _chapterIndex =
             state.reading.chapterIndex.clamp(0, content.chapters.length - 1);
+        // 新书首次打开：跳过封面/版权等零碎前页，直达第一个有正文的章节
+        if (state.reading.chapterIndex == 0 &&
+            state.reading.scrollOffset == 0) {
+          final first = content.chapters.indexWhere(
+              (c) => c.paragraphs.join().length >= 200);
+          if (first > 0) _chapterIndex = first;
+        }
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scroll.hasClients &&
@@ -148,12 +155,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return null;
   }
 
-  Highlight? _highlightAt(int para) {
+  List<Highlight> _highlightsAt(int para) {
     final loc = Locator(_chapterIndex, para);
-    for (final h in _state.highlights) {
-      if (h.locator == loc) return h;
-    }
-    return null;
+    return _state.highlights.where((h) => h.locator == loc).toList();
   }
 
   List<Explanation> _explanationsAt(int para) {
@@ -165,7 +169,26 @@ class _ReaderScreenState extends State<ReaderScreen> {
   Future<void> _toggleHighlight(int colorIndex) async {
     final para = _locateParagraph(_selectedText);
     if (para == null) return;
-    final existing = _highlightAt(para);
+
+    // 句级高亮：在段落里定位选中文字的字符范围；
+    // 找不到（选区跨段等）时回退为整段高亮。
+    final paraText = _chapter?.paragraphs[para] ?? '';
+    final sel = _selectedText.trim();
+    int? start;
+    int? end;
+    if (sel.isNotEmpty && sel.length < paraText.trim().length) {
+      final idx = paraText.indexOf(sel);
+      if (idx >= 0) {
+        start = idx;
+        end = idx + sel.length;
+      }
+    }
+
+    final s0 = start;
+    final e0 = end;
+    final existing = _highlightsAt(para)
+        .where((h) => s0 == null || e0 == null ? !h.isRange : h.overlaps(s0, e0))
+        .firstOrNull;
     setState(() {
       if (existing != null) {
         _state.highlights.remove(existing);
@@ -173,7 +196,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _state.highlights.add(Highlight(
             locator: Locator(_chapterIndex, para),
             colorIndex: colorIndex,
-            createdAt: DateTime.now()));
+            createdAt: DateTime.now(),
+            start: start,
+            end: end,
+            snippet: start != null ? sel : null));
       }
     });
     await widget.store.saveState(widget.book.id, _state);
@@ -855,8 +881,39 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  /// 句级高亮渲染：把段落文本按高亮范围切成 TextSpan。
+  Widget _richText(String text, List<Highlight> ranges, TextStyle style) {
+    final marks = ranges
+        .where((h) => h.start != null && h.start! < text.length)
+        .map((h) => (
+              h.start!.clamp(0, text.length),
+              h.end!.clamp(0, text.length),
+              h.colorIndex
+            ))
+        .toList()
+      ..sort((a, b) => a.$1.compareTo(b.$1));
+    final spans = <TextSpan>[];
+    var pos = 0;
+    for (final m in marks) {
+      final start = m.$1 < pos ? pos : m.$1;
+      final end = m.$2;
+      if (end <= pos) continue;
+      if (start > pos) spans.add(TextSpan(text: text.substring(pos, start)));
+      spans.add(TextSpan(
+          text: text.substring(start, end),
+          style: TextStyle(
+              backgroundColor:
+                  highlightColors[m.$3 % highlightColors.length])));
+      pos = end;
+    }
+    if (pos < text.length) spans.add(TextSpan(text: text.substring(pos)));
+    return Text.rich(TextSpan(style: style, children: spans));
+  }
+
   Widget _paragraph(ChapterText ch, int i, SettingsStore s) {
-    final hl = _highlightAt(i);
+    final allHls = _highlightsAt(i);
+    final hl = allHls.where((h) => !h.isRange).firstOrNull; // 整段高亮（旧数据）
+    final rangeHls = allHls.where((h) => h.isRange).toList(); // 句级高亮
     final hasExplain = _explanationsAt(i).isNotEmpty;
     final hasNote = _notesAt(i).isNotEmpty;
     final translated = _translation.of(_chapterIndex, i);
@@ -885,18 +942,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
           Theme.of(context).colorScheme.outline,
     );
 
+    // 原文渲染：有句级高亮时用富文本按范围着色
+    Widget original(TextStyle style) => rangeHls.isEmpty
+        ? Text(ch.paragraphs[i], style: style)
+        : _richText(ch.paragraphs[i], rangeHls, style);
+
     Widget body;
     switch (_mode) {
       case DisplayMode.original:
-        body = Text(ch.paragraphs[i], style: baseStyle);
+        body = original(baseStyle);
       case DisplayMode.translated:
-        body = Text(translated ?? ch.paragraphs[i],
-            style: translated != null ? baseStyle : dimStyle);
+        body = translated != null
+            ? Text(translated, style: baseStyle)
+            : original(dimStyle);
       case DisplayMode.bilingual:
         body = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(ch.paragraphs[i], style: baseStyle),
+            original(baseStyle),
             if (translated != null) ...[
               const SizedBox(height: 4),
               Text(translated, style: dimStyle),

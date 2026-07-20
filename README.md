@@ -90,7 +90,7 @@ flutter run -d macos
 ```bash
 cd app
 flutter analyze   # 0 警告
-flutter test      # 51 项单元/界面测试
+flutter test      # 57 项单元/界面测试
 E2E=1 flutter test test/e2e/phase2_e2e_test.dart   # 端到端（需网络 + Ollama）
 ```
 

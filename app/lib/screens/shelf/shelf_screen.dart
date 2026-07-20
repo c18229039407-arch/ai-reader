@@ -53,6 +53,9 @@ class _ShelfScreenState extends State<ShelfScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _maybeShowPrivacy();
       await _autoSetupAi();
+      // 老书补封面（后台，一次性；新导入的书在导入时已提取）
+      final added = await widget.store.backfillCovers();
+      if (added > 0 && mounted) setState(() {});
     });
   }
 
@@ -579,6 +582,8 @@ class _ShelfScreenState extends State<ShelfScreen> {
           final pct = _progress[b.id] ?? 0;
           final palette =
               _coverPalettes[b.title.hashCode.abs() % _coverPalettes.length];
+          final cover = widget.store.coverFile(b.id);
+          final hasCover = cover.existsSync();
           return _Hoverable(
               child: GestureDetector(
                   onSecondaryTapUp: (d) =>
@@ -596,21 +601,59 @@ class _ShelfScreenState extends State<ShelfScreen> {
                             width: double.infinity,
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(12),
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [Color(palette[0]), Color(palette[1])],
-                              ),
+                              gradient: hasCover
+                                  ? null
+                                  : LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        Color(palette[0]),
+                                        Color(palette[1])
+                                      ],
+                                    ),
                               boxShadow: [
                                 BoxShadow(
-                                  color:
-                                      Color(palette[0]).withValues(alpha: .35),
+                                  color: hasCover
+                                      ? Colors.black.withValues(alpha: .22)
+                                      : Color(palette[0])
+                                          .withValues(alpha: .35),
                                   blurRadius: 10,
                                   offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
-                            child: Stack(
+                            child: hasCover
+                                // 真实封面：EPUB 内嵌图（导入时提取）
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Image.file(
+                                      cover,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      errorBuilder: (_, __, ___) => Container(
+                                        decoration: BoxDecoration(
+                                          gradient: LinearGradient(
+                                            begin: Alignment.topLeft,
+                                            end: Alignment.bottomRight,
+                                            colors: [
+                                              Color(palette[0]),
+                                              Color(palette[1])
+                                            ],
+                                          ),
+                                        ),
+                                        alignment: Alignment.center,
+                                        padding: const EdgeInsets.all(12),
+                                        child: Text(b.title,
+                                            maxLines: 4,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w700)),
+                                      ),
+                                    ),
+                                  )
+                                : Stack(
                               children: [
                                 // 书脊装饰线
                                 Positioned(

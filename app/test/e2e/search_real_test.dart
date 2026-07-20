@@ -56,6 +56,12 @@ void main() {
     final totalChars = loaded.chapters
         .fold<int>(0, (n, c) => n + c.paragraphs.join().length);
     expect(totalChars, greaterThan(1000));
+
+    // 清理回归：不残留 WSExport 的导航条/导出说明/about 页
+    final allText = loaded.chapters.expand((c) => c.paragraphs).join('\n');
+    expect(allText, isNot(contains('上一章')));
+    expect(allText, isNot(contains('从维基文库导出')));
+    expect(allText, isNot(contains('Wsexport')));
     // ignore: avoid_print
     print('✓ 维基文库「骆驼祥子」→ ${results.length} 条，EPUB ${bytes.length ~/ 1024}KB，'
         '解析 ${loaded.chapters.length} 章 / $totalChars 字');

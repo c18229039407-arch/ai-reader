@@ -77,6 +77,11 @@ class LibraryStore {
         if (parsed.title.trim().isNotEmpty && parsed.title != '未知书名') {
           title = parsed.title;
         }
+        if (parsed.coverBytes != null) {
+          final cf = coverFile(id);
+          await cf.parent.create(recursive: true);
+          await cf.writeAsBytes(parsed.coverBytes!);
+        }
         author = parsed.author;
         lang = parsed.chapters
                 .expand((c) => c.paragraphs)
@@ -164,6 +169,32 @@ class LibraryStore {
     return added;
   }
 
+  /// 封面文件约定路径：covers/<id>.img（原始字节，Image.file 可直接解码）。
+  File coverFile(String id) => File(p.join(rootDir.path, 'covers', '$id.img'));
+
+  /// 为库中已有但缺封面的 EPUB 书补提取封面；返回新增封面数。
+  Future<int> backfillCovers() async {
+    var added = 0;
+    for (final b in await listBooks()) {
+      if (b.format != 'epub') continue;
+      final cf = coverFile(b.id);
+      if (await cf.exists()) continue;
+      try {
+        final bytes =
+            await File(p.join(rootDir.path, b.filePath)).readAsBytes();
+        final cover = (await loadEpub(bytes)).coverBytes;
+        if (cover != null) {
+          await cf.parent.create(recursive: true);
+          await cf.writeAsBytes(cover);
+          added++;
+        }
+      } catch (_) {
+        // 单本失败不影响其他书
+      }
+    }
+    return added;
+  }
+
   Future<void> removeBook(String id) async {
     final books = await listBooks();
     final book = books.where((b) => b.id == id).firstOrNull;
@@ -171,6 +202,8 @@ class LibraryStore {
     await _saveBooks(books.where((b) => b.id != id).toList());
     final f = File(p.join(rootDir.path, book.filePath));
     if (await f.exists()) await f.delete();
+    final cf = coverFile(id);
+    if (await cf.exists()) await cf.delete();
     // 清理该书所有设备的状态文件
     if (await _stateDir.exists()) {
       await for (final e in _stateDir.list()) {

@@ -126,16 +126,35 @@ class Highlight {
   Highlight(
       {required this.locator,
       required this.colorIndex,
-      required this.createdAt});
+      required this.createdAt,
+      this.start,
+      this.end,
+      this.snippet});
 
   final Locator locator;
   final int colorIndex; // 对应预置高亮色板
   final DateTime createdAt;
 
+  /// 段内字符范围（句级高亮）；为 null 表示整段高亮（旧数据兼容）。
+  final int? start;
+  final int? end;
+
+  /// 高亮的文字内容（用于标注列表展示与跨设备容错）。
+  final String? snippet;
+
+  bool get isRange => start != null && end != null;
+
+  /// 是否与另一段内范围重叠（用于再次划选同一处时取消高亮）。
+  bool overlaps(int s, int e) =>
+      isRange ? (s < end! && e > start!) : true;
+
   Map<String, dynamic> toJson() => {
         'locator': locator.toString(),
         'colorIndex': colorIndex,
         'createdAt': createdAt.toIso8601String(),
+        if (start != null) 'start': start,
+        if (end != null) 'end': end,
+        if (snippet != null) 'snippet': snippet,
       };
 
   factory Highlight.fromJson(Map<String, dynamic> j) => Highlight(
@@ -144,6 +163,9 @@ class Highlight {
         colorIndex: (j['colorIndex'] as num?)?.toInt() ?? 0,
         createdAt: DateTime.tryParse(j['createdAt'] as String? ?? '') ??
             DateTime.now(),
+        start: (j['start'] as num?)?.toInt(),
+        end: (j['end'] as num?)?.toInt(),
+        snippet: j['snippet'] as String?,
       );
 }
 
