@@ -1,15 +1,50 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:path_provider/path_provider.dart';
+
+import 'doubao_tts.dart';
 
 /// 朗读服务：逐段 TTS，播完自动推进；音色/语速/音调/定时关闭。
-/// 真机发声由系统 TTS 引擎提供（macOS 内置、Android 需 TTS 引擎）。
+/// 双引擎：系统 TTS（免费默认）/ 豆包语音大模型（BYO Key，官方授权音色）。
 class TtsService {
   TtsService();
 
   final FlutterTts _tts = FlutterTts();
   bool _inited = false;
+
+  // —— 豆包云端引擎 ——
+  DoubaoTtsClient? _doubao;
+  AudioPlayer? _player; // 惰性创建（测试环境无插件实现）
+  StreamSubscription<void>? _playerDone;
+  int _cloudSeq = 0; // 防过期回调（切段/停止后旧音频不再推进）
+
+  AudioPlayer _ensurePlayer() {
+    final p = _player ??= AudioPlayer();
+    _playerDone ??= p.onPlayerComplete.listen((_) => _onSegmentDone());
+    return p;
+  }
+
+  bool get usingCloud => _doubao != null;
+
+  /// 配置豆包引擎；传 null 切回系统 TTS。
+  void configureDoubao(
+      {String? appId, String? token, String? voice}) {
+    if (appId == null || appId.isEmpty || token == null || token.isEmpty) {
+      _doubao = null;
+      return;
+    }
+    _doubao = DoubaoTtsClient(
+      appId: appId,
+      accessToken: token,
+      voiceType: (voice == null || voice.isEmpty)
+          ? DoubaoTtsClient.defaultVoice
+          : voice,
+    );
+  }
 
   /// 当前朗读段落索引（-1 = 未在朗读）。
   final ValueNotifier<int> currentPara = ValueNotifier(-1);
@@ -119,8 +154,30 @@ class TtsService {
       await _speakCurrent();
       return;
     }
+    final doubao = _doubao;
+    if (doubao != null) {
+      // 云端：合成 mp3 → 临时文件 → 播放（完成事件推进下一段）
+      final seq = ++_cloudSeq;
+      try {
+        final mp3 = await doubao.synthesize(text,
+            speed: (rate * 2).clamp(0.5, 2.0), pitch: pitch);
+        if (!playing.value || seq != _cloudSeq) return; // 已停/已切段
+        final dir = await getTemporaryDirectory();
+        final f = File('${dir.path}/linjian_tts_${seq % 4}.mp3');
+        await f.writeAsBytes(mp3);
+        await _ensurePlayer().play(DeviceFileSource(f.path));
+      } catch (e) {
+        debugPrint('豆包 TTS: $e');
+        lastError.value = '$e';
+        await stop();
+      }
+      return;
+    }
     await _tts.speak(text);
   }
+
+  /// 云端引擎最近一次错误（UI 展示用）。
+  final ValueNotifier<String?> lastError = ValueNotifier(null);
 
   void _onSegmentDone() {
     if (!playing.value) return;
@@ -135,7 +192,9 @@ class TtsService {
 
   Future<void> pause() async {
     playing.value = false;
+    _cloudSeq++;
     await _tts.stop();
+    await _player?.stop();
   }
 
   Future<void> resume() async {
@@ -147,7 +206,9 @@ class TtsService {
   Future<void> stop() async {
     playing.value = false;
     currentPara.value = -1;
+    _cloudSeq++;
     await _tts.stop();
+    await _player?.stop();
     _cancelSleep();
   }
 
@@ -182,8 +243,11 @@ class TtsService {
   void dispose() {
     _cancelSleep();
     _tts.stop();
+    _playerDone?.cancel();
+    _player?.dispose();
     currentPara.dispose();
     playing.dispose();
     sleepRemaining.dispose();
+    lastError.dispose();
   }
 }

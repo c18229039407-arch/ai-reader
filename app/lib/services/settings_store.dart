@@ -154,6 +154,28 @@ class SettingsStore extends ChangeNotifier {
     _prefs.setString('reading_mode', v);
   }
 
+  /// 朗读引擎：system（系统 TTS，免费默认）| doubao（豆包语音大模型，需自备 Key）。
+  String get ttsProvider => _prefs.getString('tts_provider') ?? 'system';
+  set ttsProvider(String v) {
+    _prefs.setString('tts_provider', v);
+  }
+
+  String get doubaoAppId => _prefs.getString('doubao_app_id') ?? '';
+  set doubaoAppId(String v) {
+    _prefs.setString('doubao_app_id', v.trim());
+  }
+
+  String get doubaoToken => _prefs.getString('doubao_token') ?? '';
+  set doubaoToken(String v) {
+    _prefs.setString('doubao_token', v.trim());
+  }
+
+  String get doubaoVoice =>
+      _prefs.getString('doubao_voice') ?? 'zh_female_shuangkuaisisi_moon_bigtts';
+  set doubaoVoice(String v) {
+    _prefs.setString('doubao_voice', v.trim());
+  }
+
   /// 字间距（px）。
   double get letterSpacing => _prefs.getDouble('letter_spacing') ?? 0.2;
   set letterSpacing(double v) {

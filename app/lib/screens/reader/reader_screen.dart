@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/models.dart';
 import '../../services/batch_translator.dart';
+import '../../services/doubao_tts.dart';
 import '../../services/epub_loader.dart';
 import '../../services/explain_service.dart';
 import '../../services/library_store.dart';
@@ -957,8 +958,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
     );
   }
 
+  void _applyTtsProvider() {
+    final s = widget.settings;
+    if (s.ttsProvider == 'doubao') {
+      _tts.configureDoubao(
+          appId: s.doubaoAppId, token: s.doubaoToken, voice: s.doubaoVoice);
+    } else {
+      _tts.configureDoubao(); // 清空 = 回系统 TTS
+    }
+  }
+
   Future<void> _openTtsSheet(LoadedBook content) async {
     await _tts.init();
+    _applyTtsProvider();
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -988,6 +1000,87 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   ],
                 ),
                 const SizedBox(height: 12),
+                // 引擎选择：系统（免费）/ 豆包语音大模型（自备 Key）
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'system', label: Text('系统语音')),
+                    ButtonSegment(value: 'doubao', label: Text('豆包语音大模型')),
+                  ],
+                  selected: {widget.settings.ttsProvider},
+                  onSelectionChanged: (sel) {
+                    widget.settings.ttsProvider = sel.first;
+                    _tts.stop();
+                    _applyTtsProvider();
+                    setSheet(() {});
+                  },
+                ),
+                if (widget.settings.ttsProvider == 'doubao') ...[
+                  const SizedBox(height: 10),
+                  if (widget.settings.doubaoAppId.isEmpty ||
+                      widget.settings.doubaoToken.isEmpty)
+                    Text(
+                      '需要火山引擎「豆包语音」的 AppID 与 Access Token'
+                      '（console.volcengine.com 开通，有免费额度）。'
+                      '仅使用官方授权音色库，不支持克隆任何真人声音。',
+                      style: TextStyle(
+                          fontSize: 12,
+                          height: 1.6,
+                          color: Theme.of(ctx).colorScheme.outline),
+                    ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: TextEditingController(
+                        text: widget.settings.doubaoAppId),
+                    decoration: const InputDecoration(
+                        labelText: 'AppID',
+                        isDense: true,
+                        border: OutlineInputBorder()),
+                    onChanged: (v) => widget.settings.doubaoAppId = v,
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: TextEditingController(
+                        text: widget.settings.doubaoToken),
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Access Token',
+                        isDense: true,
+                        border: OutlineInputBorder()),
+                    onChanged: (v) => widget.settings.doubaoToken = v,
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final v in DoubaoTtsClient.presetVoices)
+                        ChoiceChip(
+                          label: Text(v.$2,
+                              style: const TextStyle(fontSize: 12)),
+                          selected: widget.settings.doubaoVoice == v.$1,
+                          onSelected: (_) {
+                            widget.settings.doubaoVoice = v.$1;
+                            _applyTtsProvider();
+                            setSheet(() {});
+                          },
+                        ),
+                    ],
+                  ),
+                  ValueListenableBuilder<String?>(
+                    valueListenable: _tts.lastError,
+                    builder: (_, err, __) => err == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(err,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color:
+                                        Theme.of(ctx).colorScheme.error)),
+                          ),
+                  ),
+                ],
+                const SizedBox(height: 4),
                 // 播放控制
                 ValueListenableBuilder<bool>(
                   valueListenable: _tts.playing,
@@ -1042,8 +1135,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   onChanged: (v) => setSheet(() => _tts.pitch = v),
                   onChangeEnd: (_) => _tts.applyParams(),
                 ),
-                // 音色
-                if (_tts.voices.isNotEmpty) ...[
+                // 音色（系统引擎）
+                if (widget.settings.ttsProvider == 'system' &&
+                    _tts.voices.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('音色', style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
                   const SizedBox(height: 6),
@@ -1104,7 +1198,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     ),
                   ],
                 ),
-                if (_tts.voices.isEmpty) ...[
+                if (widget.settings.ttsProvider == 'system' &&
+                    _tts.voices.isEmpty) ...[
                   const SizedBox(height: 12),
                   Text(
                     '未检测到系统语音引擎。macOS 一般自带；Android 需在系统设置里'
