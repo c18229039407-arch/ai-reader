@@ -9,6 +9,9 @@ import '../../services/book_source.dart';
 import '../../services/find_online.dart';
 import '../../services/library_store.dart';
 import '../../services/proxy_http.dart';
+import '../../services/llm_client.dart';
+import '../../services/ollama_client.dart';
+import '../../services/query_expander.dart';
 import '../../services/s2t_map.dart';
 import '../../services/settings_store.dart';
 import '../../services/title_atlas.dart';
@@ -22,11 +25,15 @@ class SearchScreen extends StatefulWidget {
     required this.store,
     this.settings,
     this.sources, // 测试注入用；为空则按 settings 构建
+    this.queryResolver, // 测试注入用：替代 词典→AI 的原名解析
   });
 
   final LibraryStore store;
   final SettingsStore? settings;
   final List<BookSource>? sources;
+
+  /// 中文书名 → (原著检索词, 展示名)；null = 不适用。
+  final Future<(String, String)?> Function(String query)? queryResolver;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -40,8 +47,43 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searching = false;
   bool _searched = false; // 已完成过一次搜索（区分「未搜索」与「无结果」）
   String? _convertedQuery; // 非空 = 本次结果来自自动繁体转换
-  String? _atlasDisplay; // 非空 = 本次结果来自名著原名映射（值为原著名）
+  String? _atlasDisplay; // 非空 = 本次结果含原名检索（值为原著名）
+  bool _originByAi = false; // 原名来自 AI 翻译（相对词典可能不准）
   int? _unavailableYear; // 非空 = 已知版权期内名著（出版年）
+
+  /// 原名解析三层：注入的测试解析器 → 内置词典 → 用户配置的 AI 翻译。
+  Future<(String query, String display, bool byAi)?> _resolveOriginal(
+      String q) async {
+    if (widget.queryResolver != null) {
+      final r = await widget.queryResolver!(q);
+      return r == null ? null : (r.$1, r.$2, true);
+    }
+    final hit = atlasLookup(q);
+    if (hit != null) return (hit.$1, hit.$2, false);
+    // AI 兜底：仅中文查询 + 已配置 AI 时启用
+    if (!RegExp(r'[一-鿿]').hasMatch(q)) return null;
+    final s = widget.settings;
+    if (s == null || !s.aiEnabled) return null;
+    LlmClient? client;
+    String? model;
+    if (s.providerType == 'openai' &&
+        s.openaiApiKey.isNotEmpty &&
+        s.openaiModel.isNotEmpty) {
+      client = OpenAiCompatClient(baseUrl: s.openaiBaseUrl, apiKey: s.openaiApiKey);
+      model = s.openaiModel;
+    } else if (s.model.isNotEmpty) {
+      client = OllamaClient(s.ollamaUrl);
+      model = s.model;
+    }
+    if (client == null || model == null) return null;
+    try {
+      final t = await originalTitleQuery(q, client, model)
+          .timeout(const Duration(seconds: 12));
+      return t == null ? null : (t, t, true);
+    } catch (_) {
+      return null; // AI 失败不影响主链路
+    }
+  }
   String _lastQuery = '';
   List<String> _failedNames = []; // 本轮连不上的书源（结果可能不完整）
   String? _error;
@@ -155,20 +197,23 @@ class _SearchScreenState extends State<SearchScreen> {
       try {
         var (all, converted) = await _searchWithFallback(widget.sources!, q);
         String? atlasDisplay;
-        if (all.isEmpty) {
-          final hit = atlasLookup(q);
-          if (hit != null) {
-            final retried = await _searchAll(widget.sources!, hit.$1);
-            if (retried.isNotEmpty) {
-              all = retried;
-              atlasDisplay = hit.$2;
-            }
+        var originByAi = false;
+        final resolved = await _resolveOriginal(q);
+        if (resolved != null) {
+          final retried = await _searchAll(widget.sources!, resolved.$1);
+          final seen = all.map((r) => r.downloadUrl).toSet();
+          final fresh = retried.where((r) => seen.add(r.downloadUrl)).toList();
+          if (fresh.isNotEmpty) {
+            all = [...all, ...fresh];
+            atlasDisplay = resolved.$2;
+            originByAi = resolved.$3;
           }
         }
         setState(() {
           _results = all;
           _convertedQuery = converted;
           _atlasDisplay = atlasDisplay;
+          _originByAi = originByAi;
           _unavailableYear = all.isEmpty ? knownUnavailableYear(q) : null;
           _activeSources = widget.sources!;
           _searched = true;
@@ -190,6 +235,17 @@ class _SearchScreenState extends State<SearchScreen> {
       attempts.add(cfg);
     }
 
+    // —— 并行双链路 ——
+    // 链路 A（中文）：直搜 → 简繁回退
+    // 链路 B（原名）：词典/AI 解析原著检索词 → 原文搜索
+    // 用户是中文用户，不该被要求知道「瓦尔登湖 = Walden」——翻译是产品的事。
+    final originF = _resolveOriginal(q).then((r) async {
+      if (r == null) return null;
+      final (oEng, _) = await _searchOnce(r.$1, attempts);
+      final okEng = oEng.whereType<_SourceResult>().toList();
+      return (r, okEng);
+    });
+
     var (outcomes, errors) = await _searchOnce(q, attempts);
     var ok = outcomes.whereType<_SourceResult>().toList();
     var all = ok.expand((o) => o.results).toList();
@@ -210,19 +266,22 @@ class _SearchScreenState extends State<SearchScreen> {
       }
     }
 
-    // 名著原名回退：外国经典的中文译本有译者版权（公版库没有），
-    // 但原著已公版——按内置书名地图转原著检索词再来一轮
+    // 合并原名链路结果（去重后附加；下载源实例一并纳入）
     String? atlasDisplay;
-    if (ok.isNotEmpty && all.isEmpty) {
-      final hit = atlasLookup(q);
-      if (hit != null) {
-        final (o3, _) = await _searchOnce(hit.$1, attempts);
-        final ok3 = o3.whereType<_SourceResult>().toList();
-        final all3 = ok3.expand((o) => o.results).toList();
-        if (all3.isNotEmpty) {
-          ok = ok3;
-          all = all3;
-          atlasDisplay = hit.$2;
+    var originByAi = false;
+    final origin = await originF;
+    if (origin != null) {
+      final (resolved, okEng) = origin;
+      final engAll = okEng.expand((o) => o.results).toList();
+      if (engAll.isNotEmpty) {
+        final seen = all.map((r) => r.downloadUrl).toSet();
+        final fresh =
+            engAll.where((r) => seen.add(r.downloadUrl)).toList();
+        if (fresh.isNotEmpty) {
+          all = [...all, ...fresh];
+          ok = [...ok, ...okEng];
+          atlasDisplay = resolved.$2;
+          originByAi = resolved.$3;
         }
       }
     }
@@ -244,6 +303,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _results = all;
       _convertedQuery = converted;
       _atlasDisplay = atlasDisplay;
+      _originByAi = originByAi;
       _unavailableYear = all.isEmpty ? knownUnavailableYear(q) : null;
       _activeSources = ok.map((o) => o.source).toList();
       _usedProxy =
@@ -335,8 +395,11 @@ class _SearchScreenState extends State<SearchScreen> {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      '「$_lastQuery」的中文译本仍在版权期（译者版权），原著已公版——'
-                      '已为你找到原著《$_atlasDisplay》',
+                      _originByAi
+                          ? 'AI 识别「$_lastQuery」的原著为《$_atlasDisplay》，已按原名同步搜索'
+                              '（AI 判断，可能不准；中文译本多有译者版权故公版库无中文版）'
+                          : '「$_lastQuery」的中文译本仍在版权期（译者版权），原著已公版——'
+                              '已为你找到原著《$_atlasDisplay》',
                       style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context).colorScheme.primary),
