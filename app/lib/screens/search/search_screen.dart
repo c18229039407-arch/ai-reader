@@ -11,6 +11,7 @@ import '../../services/library_store.dart';
 import '../../services/proxy_http.dart';
 import '../../services/s2t_map.dart';
 import '../../services/settings_store.dart';
+import '../../services/title_atlas.dart';
 
 /// 公版书搜索页（A2/A3）。
 /// 网络策略：直连失败时自动探测本机常见代理端口（Clash 7890 等）——
@@ -39,6 +40,8 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searching = false;
   bool _searched = false; // 已完成过一次搜索（区分「未搜索」与「无结果」）
   String? _convertedQuery; // 非空 = 本次结果来自自动繁体转换
+  String? _atlasDisplay; // 非空 = 本次结果来自名著原名映射（值为原著名）
+  int? _unavailableYear; // 非空 = 已知版权期内名著（出版年）
   String _lastQuery = '';
   List<String> _failedNames = []; // 本轮连不上的书源（结果可能不完整）
   String? _error;
@@ -141,6 +144,8 @@ class _SearchScreenState extends State<SearchScreen> {
       _results = [];
       _usedProxy = null;
       _convertedQuery = null;
+      _atlasDisplay = null;
+      _unavailableYear = null;
       _failedNames = [];
       _lastQuery = q;
     });
@@ -148,10 +153,23 @@ class _SearchScreenState extends State<SearchScreen> {
     // 测试注入路径：只用注入源直连
     if (widget.sources != null) {
       try {
-        final (all, converted) = await _searchWithFallback(widget.sources!, q);
+        var (all, converted) = await _searchWithFallback(widget.sources!, q);
+        String? atlasDisplay;
+        if (all.isEmpty) {
+          final hit = atlasLookup(q);
+          if (hit != null) {
+            final retried = await _searchAll(widget.sources!, hit.$1);
+            if (retried.isNotEmpty) {
+              all = retried;
+              atlasDisplay = hit.$2;
+            }
+          }
+        }
         setState(() {
           _results = all;
           _convertedQuery = converted;
+          _atlasDisplay = atlasDisplay;
+          _unavailableYear = all.isEmpty ? knownUnavailableYear(q) : null;
           _activeSources = widget.sources!;
           _searched = true;
         });
@@ -192,6 +210,23 @@ class _SearchScreenState extends State<SearchScreen> {
       }
     }
 
+    // 名著原名回退：外国经典的中文译本有译者版权（公版库没有），
+    // 但原著已公版——按内置书名地图转原著检索词再来一轮
+    String? atlasDisplay;
+    if (ok.isNotEmpty && all.isEmpty) {
+      final hit = atlasLookup(q);
+      if (hit != null) {
+        final (o3, _) = await _searchOnce(hit.$1, attempts);
+        final ok3 = o3.whereType<_SourceResult>().toList();
+        final all3 = ok3.expand((o) => o.results).toList();
+        if (all3.isNotEmpty) {
+          ok = ok3;
+          all = all3;
+          atlasDisplay = hit.$2;
+        }
+      }
+    }
+
     if (!mounted) return;
     if (ok.isEmpty) {
       setState(() {
@@ -208,6 +243,8 @@ class _SearchScreenState extends State<SearchScreen> {
     setState(() {
       _results = all;
       _convertedQuery = converted;
+      _atlasDisplay = atlasDisplay;
+      _unavailableYear = all.isEmpty ? knownUnavailableYear(q) : null;
       _activeSources = ok.map((o) => o.source).toList();
       _usedProxy =
           ok.map((o) => o.proxy).firstWhere((p) => p != null, orElse: () => null);
@@ -288,6 +325,26 @@ class _SearchScreenState extends State<SearchScreen> {
               ],
             ),
           ),
+          if (_atlasDisplay != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Row(
+                children: [
+                  Icon(Icons.menu_book_outlined,
+                      size: 14, color: Theme.of(context).colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '「$_lastQuery」的中文译本仍在版权期（译者版权），原著已公版——'
+                      '已为你找到原著《$_atlasDisplay》',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.primary),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           if (_convertedQuery != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -330,14 +387,21 @@ class _SearchScreenState extends State<SearchScreen> {
                         child: Text(
                           !_searched
                               ? '输入书名开始搜索公版书'
-                              : '没有找到「$_lastQuery」\n\n'
-                                  '这里只能搜到公版书——版权已过期、可合法免费下载全文的书：\n'
-                                  '· 中文：作者逝世满 50 年即公版，鲁迅、朱自清、老舍等近现代作品可搜\n'
-                                  '· 英文：约 1929 年以前出版的作品，可试英文书名或作者名\n\n'
-                                  '仍在版权保护期的书（近几十年出版的新书、畅销书、教材）\n'
-                                  '不存在合法的免费全文来源，任何声称免费提供的站点都是盗版。\n'
-                                  '可用下方入口去站外找这本书，拿到文件后\n'
-                                  '用书架的「导入书籍」阅读——AI 解释、翻译等功能同样可用。',
+                              : _unavailableYear != null
+                                  ? '搜不到《$_lastQuery》是正常的\n\n'
+                                      '它$_unavailableYear 年出版，仍在版权保护期（或译本受限），\n'
+                                      '不存在合法的免费全文来源——任何声称免费提供的站点都是盗版。\n\n'
+                                      '用下方「站外找书」入口购买正版电子书，\n'
+                                      '拿到文件后经「导入书籍」进书架，\n'
+                                      'AI 解释、翻译、朗读等全部功能照常可用。'
+                                  : '没有找到「$_lastQuery」\n\n'
+                                      '这里只能搜到公版书——版权已过期、可合法免费下载全文的书：\n'
+                                      '· 中文：作者逝世满 50 年即公版，鲁迅、朱自清、老舍等近现代作品可搜\n'
+                                      '· 外国经典：中文译本多有译者版权，可试英文原名\n'
+                                      '（常见名著 App 会自动转原名重搜）\n\n'
+                                      '仍在版权保护期的书不存在合法的免费全文来源。\n'
+                                      '可用下方入口去站外找这本书，拿到文件后\n'
+                                      '用书架的「导入书籍」阅读——AI 功能同样可用。',
                           textAlign:
                               !_searched ? TextAlign.center : TextAlign.left,
                           style: TextStyle(

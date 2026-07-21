@@ -4,6 +4,7 @@ import 'package:ai_reader/services/book_source.dart';
 import 'package:ai_reader/services/cover_fetcher.dart';
 import 'package:ai_reader/services/epub_loader.dart';
 import 'package:ai_reader/services/s2t_map.dart';
+import 'package:ai_reader/services/title_atlas.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 真实网络端到端：验证「简体输入 → 繁体回退」在真 Gutendex 上成立。
@@ -79,6 +80,21 @@ void main() {
     // ignore: avoid_print
     print('✓ 反例「小岛经济学」→ 0 条（此前全文检索会返回判决书等噪音）');
   }, timeout: const Timeout(Duration(minutes: 2)));
+
+  test('真实 Gutendex：名著地图四本书的原名检索词全部命中', () async {
+    if (!enabled) {
+      markTestSkipped('设 E2E=1 才执行（需要外网）');
+      return;
+    }
+    final source = GutendexSource();
+    for (final zh in ['瓦尔登湖', '理想国', '苏格拉底的申辩', '社会契约论']) {
+      final hit = atlasLookup(zh)!;
+      final results = await source.search(hit.$1);
+      expect(results, isNotEmpty, reason: '$zh → ${hit.$1} 应命中');
+      // ignore: avoid_print
+      print('✓ $zh → ${hit.$2}：${results.first.title}');
+    }
+  }, timeout: const Timeout(Duration(minutes: 4)));
 
   test('真实 Open Library：英文书能联网取到封面', () async {
     if (!enabled) {
