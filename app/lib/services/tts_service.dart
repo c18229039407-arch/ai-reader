@@ -179,6 +179,18 @@ class TtsService {
   /// 云端引擎最近一次错误（UI 展示用）。
   final ValueNotifier<String?> lastError = ValueNotifier(null);
 
+  /// 测试豆包连接：合成一句短语，成功返回 null，失败返回可读错误。
+  Future<String?> testCloud() async {
+    final doubao = _doubao;
+    if (doubao == null) return '尚未配置豆包引擎（AppID/Token 为空）';
+    try {
+      final bytes = await doubao.synthesize('你好，林间阅读。');
+      return bytes.length > 1024 ? null : '返回音频异常（${bytes.length} 字节）';
+    } catch (e) {
+      return '$e'.replaceFirst('Exception: ', '');
+    }
+  }
+
   void _onSegmentDone() {
     if (!playing.value) return;
     _index++;

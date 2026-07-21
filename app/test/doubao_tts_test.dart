@@ -22,8 +22,12 @@ void main() {
             ((lastRequest!['request'] as Map)['text'] as String?) ?? '';
         req.response.headers.contentType = ContentType.json;
         if (text == 'FAIL') {
-          req.response.add(utf8.encode(
-              jsonEncode({'code': 3001, 'message': 'invalid token'})));
+          // 真实 API 行为：非 200 状态码 + JSON 错误体（沙盒实测 401+3001）
+          req.response.statusCode = 401;
+          req.response.add(utf8.encode(jsonEncode({
+            'code': 3001,
+            'message': 'load grant: requested grant not found in SaaS storage'
+          })));
         } else {
           req.response.add(utf8.encode(jsonEncode(
               {'code': 3000, 'message': 'ok', 'data': base64Encode(fakeMp3)})));
@@ -52,15 +56,24 @@ void main() {
       expect((lastRequest!['request'] as Map)['operation'], 'query');
     });
 
-    test('错误码给可操作的提示（3001 提示检查 Key）', () async {
+    test('非 200 + JSON 错误体：解析出真实原因并给可操作提示（回归：曾只报 HTTP 401）',
+        () async {
       final c = DoubaoTtsClient(
           appId: 'a', accessToken: 't', baseUrl: base);
       await expectLater(
         c.synthesize('FAIL'),
         throwsA(predicate((e) =>
-            e.toString().contains('3001') &&
-            e.toString().contains('AppID/Token'))),
+            e.toString().contains('服务未开通或音色未授权') &&
+            e.toString().contains('3001'))),
       );
+    });
+
+    test('describeError 错误码翻译', () {
+      expect(DoubaoTtsClient.describeError(3001, 'grant not found', 401),
+          contains('开通服务'));
+      expect(DoubaoTtsClient.describeError(3003, null, 200), contains('额度'));
+      expect(DoubaoTtsClient.describeError(3011, null, 200), contains('音色'));
+      expect(DoubaoTtsClient.describeError(null, null, 403), contains('鉴权失败'));
     });
 
     test('语速越界被收敛到合法区间', () async {

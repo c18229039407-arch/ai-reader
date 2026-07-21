@@ -79,6 +79,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   Timer? _statsTimer;
   final TtsService _tts = TtsService();
+  bool _ttsTesting = false;
+  String? _ttsTestResult;
 
   @override
   void initState() {
@@ -88,6 +90,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
     // 朗读到某段时高亮该段
     _tts.currentPara.addListener(() {
       if (mounted) setState(() {});
+    });
+    // 云端朗读失败：无论面板开没开都弹提示（否则用户只感到「没声音」）
+    _tts.lastError.addListener(() {
+      final err = _tts.lastError.value;
+      if (err != null && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('朗读失败：${err.replaceFirst('Exception: ', '')}'),
+          duration: const Duration(seconds: 6),
+        ));
+      }
     });
     // 每 30 秒累计一次阅读时长（仅前台；退出时结算尾数）
     _statsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -1186,6 +1198,43 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       }
                     },
                   ),
+                  const SizedBox(height: 10),
+                  Row(children: [
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.network_check, size: 16),
+                      label: Text(_ttsTesting ? '测试中…' : '测试连接'),
+                      onPressed: _ttsTesting
+                          ? null
+                          : () async {
+                              setSheet(() {
+                                _ttsTesting = true;
+                                _ttsTestResult = null;
+                              });
+                              _applyTtsProvider();
+                              final err = await _tts.testCloud();
+                              setSheet(() {
+                                _ttsTesting = false;
+                                _ttsTestResult = err ?? 'OK';
+                              });
+                            },
+                    ),
+                    const SizedBox(width: 10),
+                    if (_ttsTestResult != null)
+                      Expanded(
+                        child: Text(
+                          _ttsTestResult == 'OK'
+                              ? '✓ 连接正常，可以朗读'
+                              : _ttsTestResult!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.5,
+                            color: _ttsTestResult == 'OK'
+                                ? Theme.of(ctx).colorScheme.primary
+                                : Theme.of(ctx).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                  ]),
                   ValueListenableBuilder<String?>(
                     valueListenable: _tts.lastError,
                     builder: (_, err, __) => err == null

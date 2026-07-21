@@ -80,19 +80,49 @@ class DoubaoTtsClient {
             },
             body: body)
         .timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) {
-      throw Exception('豆包语音 HTTP ${res.statusCode}');
+
+    // 注意：豆包出错时是「非 200 状态码 + JSON 错误体」（实测 401+code:3001），
+    // 必须先解析 JSON 拿真实原因，不能只看 HTTP 状态码。
+    Map<String, dynamic>? data;
+    try {
+      data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    } catch (_) {
+      // 非 JSON 响应（网关错误等）
     }
-    final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    final code = (data['code'] as num?)?.toInt();
-    if (code != 3000) {
-      throw Exception('豆包语音错误 $code：${data['message'] ?? '未知'}'
-          '${code == 3001 ? '（检查 AppID/Token 是否正确、服务是否开通）' : ''}');
+    final code = (data?['code'] as num?)?.toInt();
+    final message = data?['message']?.toString();
+
+    if (res.statusCode != 200 || code != 3000) {
+      throw Exception(describeError(code, message, res.statusCode));
     }
-    final b64 = data['data'] as String?;
+    final b64 = data?['data'] as String?;
     if (b64 == null || b64.isEmpty) {
       throw Exception('豆包语音返回空音频');
     }
     return base64Decode(b64);
+  }
+
+  /// 把豆包错误码翻译成用户能操作的中文提示。
+  static String describeError(int? code, String? message, int httpStatus) {
+    final raw = '（$code ${message ?? ''} HTTP $httpStatus）';
+    if (code == 3001 || (message ?? '').contains('grant')) {
+      return '服务未开通或音色未授权：到火山控制台「语音技术 → 语音合成大模型」'
+          '开通服务并领取免费额度，再到音色列表确认所选音色已开通。'
+          'Token 错误也会报这个。$raw';
+    }
+    if (code == 3003) {
+      return '额度已用完或触发限流，稍后再试或到控制台充值。$raw';
+    }
+    if (code == 3005) {
+      return '服务端繁忙，稍后重试。$raw';
+    }
+    if (code == 3011) {
+      return '请求参数无效：多半是音色代码不存在或本账号未开通该音色，'
+          '换预置音色或到控制台音色列表复制正确代码。$raw';
+    }
+    if (httpStatus == 401 || httpStatus == 403) {
+      return '鉴权失败：检查 AppID 与 Access Token 是否复制完整、有无多余空格。$raw';
+    }
+    return '豆包语音调用失败。$raw';
   }
 }
