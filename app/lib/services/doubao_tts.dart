@@ -25,13 +25,16 @@ class DoubaoTtsClient {
 
   static const defaultVoice = 'zh_female_shuangkuaisisi_moon_bigtts';
 
-  /// 官方授权音色精选（大模型音色，代码经公开资料验证有效；
-  /// 账号实际可用音色以火山控制台为准，可在朗读面板填自定义代码）。
+  /// 官方授权音色精选。两档：
+  /// - 经典音色（BV 开头）：基础语音合成服务即可用，开通门槛最低（真实账号实测可用）
+  /// - 大模型音色（_moon_bigtts）：需在控制台额外开通「语音合成大模型」
   static const presetVoices = <(String code, String label)>[
-    ('zh_female_shuangkuaisisi_moon_bigtts', '爽快思思（女）'),
-    ('zh_female_wanwanxiaohe_moon_bigtts', '婉婉小荷（女·温柔）'),
-    ('zh_male_wennuanahu_moon_bigtts', '温暖阿虎（男）'),
-    ('zh_male_jingqiangkanye_moon_bigtts', '精强侃爷（男）'),
+    ('BV700_streaming', '灿灿（女·经典）'),
+    ('BV001_streaming', '通用女声（经典）'),
+    ('BV002_streaming', '通用男声（经典）'),
+    ('zh_female_wanwanxiaohe_moon_bigtts', '婉婉小荷（女·大模型）'),
+    ('zh_female_shuangkuaisisi_moon_bigtts', '爽快思思（女·大模型）'),
+    ('zh_male_wennuanahu_moon_bigtts', '温暖阿虎（男·大模型）'),
   ];
 
   /// 「清甜温柔」一键预设（按用户提供的豆包 APP 调音参数换算到 API 刻度）：
@@ -40,6 +43,13 @@ class DoubaoTtsClient {
   /// 注：APP 里的「混响 15%-25%」「情感调」为智能体界面功能，TTS API 不支持。
   static const sweetGentlePreset = (
     voice: 'zh_female_wanwanxiaohe_moon_bigtts',
+    speedRatio: 0.94,
+    pitchRatio: 1.25,
+  );
+
+  /// 清甜预设·经典版：未开通大模型服务时的即用替代（灿灿 + 同参数）。
+  static const sweetClassicPreset = (
+    voice: 'BV700_streaming',
     speedRatio: 0.94,
     pitchRatio: 1.25,
   );
@@ -106,9 +116,13 @@ class DoubaoTtsClient {
   static String describeError(int? code, String? message, int httpStatus) {
     final raw = '（$code ${message ?? ''} HTTP $httpStatus）';
     if (code == 3001 || (message ?? '').contains('grant')) {
-      return '服务未开通或音色未授权：到火山控制台「语音技术 → 语音合成大模型」'
-          '开通服务并领取免费额度，再到音色列表确认所选音色已开通。'
-          'Token 错误也会报这个。$raw';
+      if ((message ?? '').contains('10029')) {
+        return '「语音合成大模型」服务未开通（大模型音色需要它）。'
+            '两个解决办法：换用经典音色（灿灿/通用女声等 BV 开头，基础服务即用）；'
+            '或到火山控制台「语音技术 → 语音合成大模型」开通并领免费额度。$raw';
+      }
+      return '服务未开通或音色未授权：到火山控制台「语音技术」确认服务已开通、'
+          '所选音色已授权；Token 错误也会报这个。$raw';
     }
     if (code == 3003) {
       return '额度已用完或触发限流，稍后再试或到控制台充值。$raw';

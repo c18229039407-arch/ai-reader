@@ -70,7 +70,12 @@ void main() {
 
     test('describeError 错误码翻译', () {
       expect(DoubaoTtsClient.describeError(3001, 'grant not found', 401),
-          contains('开通服务'));
+          contains('服务未开通'));
+      // 大模型资源缺失（实测 resource_id 10029）→ 给经典音色替代方案
+      expect(
+          DoubaoTtsClient.describeError(3001,
+              '[resource_id=volc.service_type.10029] requested resource not granted', 403),
+          contains('经典音色'));
       expect(DoubaoTtsClient.describeError(3003, null, 200), contains('额度'));
       expect(DoubaoTtsClient.describeError(3011, null, 200), contains('音色'));
       expect(DoubaoTtsClient.describeError(null, null, 403), contains('鉴权失败'));
@@ -87,8 +92,11 @@ void main() {
 
     test('预置音色全部来自官方授权库（不含任何真人克隆项）', () {
       for (final v in DoubaoTtsClient.presetVoices) {
-        expect(v.$1, matches(RegExp(r'^zh_(female|male)_[a-z]+_moon_bigtts$')),
-            reason: '只允许平台官方大模型音色命名空间');
+        expect(
+            v.$1,
+            matches(RegExp(
+                r'^(BV\d+_streaming|zh_(female|male)_[a-z]+_moon_bigtts)$')),
+            reason: '只允许平台官方经典（BV）或大模型音色命名空间');
       }
     });
 

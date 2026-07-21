@@ -1151,15 +1151,29 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      // 一键预设：清甜温柔（婉婉小荷 + 语速0.94 + 音高1.25）
+                      // 一键预设：清甜（经典·开箱即用 / 大模型·需开通）
                       ActionChip(
                         avatar: const Icon(Icons.auto_fix_high, size: 15),
-                        label: const Text('清甜温柔预设',
+                        label: const Text('清甜·灿灿（即用）',
+                            style: TextStyle(fontSize: 12)),
+                        onPressed: () {
+                          const p = DoubaoTtsClient.sweetClassicPreset;
+                          widget.settings.doubaoVoice = p.voice;
+                          _tts.rate = p.speedRatio / 2; // speed = rate*2
+                          _tts.pitch = p.pitchRatio;
+                          _applyTtsProvider();
+                          _tts.applyParams();
+                          setSheet(() {});
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.auto_fix_high, size: 15),
+                        label: const Text('清甜温柔·大模型',
                             style: TextStyle(fontSize: 12)),
                         onPressed: () {
                           const p = DoubaoTtsClient.sweetGentlePreset;
                           widget.settings.doubaoVoice = p.voice;
-                          _tts.rate = p.speedRatio / 2; // speed = rate*2
+                          _tts.rate = p.speedRatio / 2;
                           _tts.pitch = p.pitchRatio;
                           _applyTtsProvider();
                           _tts.applyParams();
