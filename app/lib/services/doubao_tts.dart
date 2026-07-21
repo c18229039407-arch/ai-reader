@@ -44,6 +44,15 @@ class DoubaoTtsClient {
     pitchRatio: 1.25,
   );
 
+  /// 一段式粘贴解析：用户把「AppID:Token」整段贴进来自动拆两项。
+  /// 支持 冒号/分号/逗号/空白 分隔；AppID 是纯数字（火山控制台格式）。
+  static (String appId, String token)? parseCombinedKey(String input) {
+    final m = RegExp(r'^\s*(\d{6,16})\s*[:;,，；：\s]+\s*(\S{10,})\s*$')
+        .firstMatch(input);
+    if (m == null) return null;
+    return (m.group(1)!, m.group(2)!);
+  }
+
   /// 合成一段文本，返回 MP3 字节。[speed]/[pitch] 与系统 TTS 面板同刻度。
   Future<Uint8List> synthesize(String text,
       {double speed = 1.0, double pitch = 1.0}) async {

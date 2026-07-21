@@ -1108,10 +1108,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     controller: TextEditingController(
                         text: widget.settings.doubaoAppId),
                     decoration: const InputDecoration(
-                        labelText: 'AppID',
+                        labelText: 'AppID（支持整段粘贴 AppID:Token 自动拆分）',
                         isDense: true,
                         border: OutlineInputBorder()),
-                    onChanged: (v) => widget.settings.doubaoAppId = v,
+                    onChanged: (v) {
+                      final combo = DoubaoTtsClient.parseCombinedKey(v);
+                      if (combo != null) {
+                        widget.settings.doubaoAppId = combo.$1;
+                        widget.settings.doubaoToken = combo.$2;
+                        _applyTtsProvider();
+                        setSheet(() {}); // 重建后两个框各就各位
+                      } else {
+                        widget.settings.doubaoAppId = v;
+                      }
+                    },
                   ),
                   const SizedBox(height: 8),
                   TextField(

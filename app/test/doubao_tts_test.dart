@@ -79,6 +79,19 @@ void main() {
       }
     });
 
+    test('一段式凭证粘贴解析：多种分隔符与非法输入', () {
+      expect(DoubaoTtsClient.parseCombinedKey('1234567890:AbCdEf123456'),
+          ('1234567890', 'AbCdEf123456'));
+      expect(DoubaoTtsClient.parseCombinedKey(' 1234567890 ； TokenXYZ12345 '),
+          ('1234567890', 'TokenXYZ12345'));
+      expect(
+          DoubaoTtsClient.parseCombinedKey('1234567890\nAbCdEf123456'),
+          ('1234567890', 'AbCdEf123456'));
+      // 非法：纯 AppID、纯 token、格式不符 → null（当普通输入处理）
+      expect(DoubaoTtsClient.parseCombinedKey('1234567890'), isNull);
+      expect(DoubaoTtsClient.parseCombinedKey('AbCdEf:123'), isNull);
+    });
+
     test('清甜温柔预设：参数在 API 合法区间且音色来自授权库', () {
       const p = DoubaoTtsClient.sweetGentlePreset;
       expect(p.speedRatio, inInclusiveRange(0.90, 0.98),
